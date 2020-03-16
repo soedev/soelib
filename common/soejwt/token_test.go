@@ -1,0 +1,24 @@
+package soejwt
+
+import (
+	"log"
+	"testing"
+)
+
+func TestGetSoeAuthToken(t *testing.T) {
+	data, err := GetSoeAuthToken("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI1MDAwNjAiLCJqdGkiOiIzNjJjZjBiZjA5N2U0MGE5OTQxYjhmZjRjZmRmYjhjNSIsInN1YiI6IntcInVzZXJVaWRcIjpcIjAwMS0wMDAwMTJcIixcInRlbmFudElkXCI6XCI1MDAwNjBcIixcInRlbmFudENvZGVcIjpcIlwiLFwiYWxpVXNlclBpZFwiOlwiXCIsXCJhbGlNZXJjaGFudFBpZFwiOlwiXCIsXCJhbGlBdXRoVG9rZW5cIjpcIlwiLFwiYWxpQXV0aENvZGVcIjpcIlwiLFwib3BlbklkXCI6XCJcIixcIm9wZW5JZDJcIjpcIlwiLFwibG9naW5UeXBlXCI6XCJcIixcImhvbGRTaG9wQ29kZVwiOlwiXCIsXCJhcHBJZFwiOlwiXCIsXCJhbGlNZXJjaGFudFNob3BJZFwiOlwiXCJ9In0.VrHym-VUAMGAX9vGuQQfzjgslgENSAbXA788WcR_2qk")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	log.Println(data)
+}
+
+func TestParseToken(t *testing.T) {
+	data, err := ParseToken("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI1MDAwNjAiLCJqdGkiOiIzNjJjZjBiZjA5N2U0MGE5OTQxYjhmZjRjZmRmYjhjNSIsInN1YiI6IntcInVzZXJVaWRcIjpcIjAwMS0wMDAwMTJcIixcInRlbmFudElkXCI6XCI1MDAwNjBcIixcInRlbmFudENvZGVcIjpcIlwiLFwiYWxpVXNlclBpZFwiOlwiXCIsXCJhbGlNZXJjaGFudFBpZFwiOlwiXCIsXCJhbGlBdXRoVG9rZW5cIjpcIlwiLFwiYWxpQXV0aENvZGVcIjpcIlwiLFwib3BlbklkXCI6XCJcIixcIm9wZW5JZDJcIjpcIlwiLFwibG9naW5UeXBlXCI6XCJcIixcImhvbGRTaG9wQ29kZVwiOlwiXCIsXCJhcHBJZFwiOlwiXCIsXCJhbGlNZXJjaGFudFNob3BJZFwiOlwiXCJ9In0.VrHym-VUAMGAX9vGuQQfzjgslgENSAbXA788WcR_2qk")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	log.Println(data)
+}
