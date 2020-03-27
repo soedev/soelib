@@ -198,8 +198,8 @@ func DatetimeToString(Type string, date *time.Time) (dateTime string) {
 //GetSecondDiffer 获取相差时间
 func GetSecondDiffer(startTime, endTime string) int64 {
 	var second int64
-	t1, err := time.ParseInLocation("2006-01-02 15:04:05", startTime, time.Local)
-	t2, err := time.ParseInLocation("2006-01-02 15:04:05", endTime, time.Local)
+	t1, err := time.ParseInLocation("15:04:05", startTime, time.Local)
+	t2, err := time.ParseInLocation("15:04:05", endTime, time.Local)
 	if err == nil {
 		diff := t2.Unix() - t1.Unix()
 
