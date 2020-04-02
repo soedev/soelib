@@ -231,15 +231,10 @@ func IsNearStartTime(t *time.Time, startTime *time.Time, endTime *time.Time) boo
 		endPeriodTime = endTime.Format("15:04:05")
 	}
 
-	if startPeriodtTime <= endPeriodTime {
-		if GetSecondDiffer(searchTime, startPeriodtTime) < GetSecondDiffer(searchTime, endPeriodTime) {
-			isNear = true
-		}
-	} else {
-		if GetSecondDiffer(searchTime, startPeriodtTime) < (GetSecondDiffer(searchTime, "23:59:59")+GetSecondDiffer(endPeriodTime,"00:00:00")) {
-			isNear = true
-		}
+	if GetSecondDiffer(searchTime, startPeriodtTime) < GetSecondDiffer(searchTime, endPeriodTime) {
+		isNear = true
 	}
+
 
 	return isNear
 

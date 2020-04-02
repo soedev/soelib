@@ -13,9 +13,9 @@ func TestGetShopBussinessDateTime(t *testing.T) {
 }
 
 func TestIsNearStartTime(t *testing.T) {
-	ti := time.Now()
-	s,_ := time.Parse("15:04:05","10:00:00")
-	e,_ := time.Parse("15:04:05","09:59:59")
+	ti,_ := time.Parse("15:04:05","20:00:00")
+	s,_ := time.Parse("15:04:05","22:00:00")
+	e,_ := time.Parse("15:04:05","10:59:59")
 	b:=IsNearStartTime(&ti,&s,&e)
 	fmt.Println(b)
 }
