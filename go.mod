@@ -21,9 +21,6 @@ require (
 	github.com/jinzhu/gorm v1.9.12
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/spf13/viper v1.6.2
-	github.com/surge/glog v0.0.0-20141108051140-2578deb2b95c // indirect
-	github.com/surgemq/message v0.0.0-20151017233315-2b7ca1ac6121
-	github.com/surgemq/surgemq v0.0.0-20181111185059-782e2da07805
 	github.com/ulule/deepcopier v0.0.0-20200117111125-792cfb847af8
 	go.uber.org/zap v1.14.0
 	golang.org/x/net v0.0.0-20200301022130-244492dfa37a
