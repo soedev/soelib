@@ -132,6 +132,7 @@ func (s *EmqttClient) PublishStrMsg(topic string, msg string) {
 		return
 	}
 	if s.MQTT.IsConnected() {
+		log.Println("发送消息："+msg)
 		s.MQTT.Publish(topic, 0, false, msg)
 	} else {
 		log.Println(fmt.Sprintf("发生消息到通道%s错误，Emqtt 未连接", topic))
