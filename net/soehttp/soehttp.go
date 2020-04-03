@@ -99,11 +99,6 @@ func (soeRemoteService *SoeRemoteService) Post(postBody *[]byte) ([]byte, error)
 		return nil, err
 	}
 
-	if !(resp.StatusCode >= 200 && resp.StatusCode <= 207) {
-		err = soeRemoteService.handleError(resp)
-		return nil, err
-	}
-
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
@@ -142,12 +137,6 @@ func (soeRemoteService *SoeRemoteService) Get(newReader io.Reader) ([]byte, erro
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
-	}
-
-	if !(resp.StatusCode >= 200 && resp.StatusCode <= 207) {
-
-		err = soeRemoteService.handleError(resp)
 		return nil, err
 	}
 
