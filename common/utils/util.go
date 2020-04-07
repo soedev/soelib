@@ -74,6 +74,28 @@ func NumberToChinese(str string) (numStr string, err error) {
 	return string(num), nil
 }
 
+//NumberToChinese 将阿拉伯数字转中文数字
+func ChineseToNumber(str string) (numStr string, err error) {
+	chineses := []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
+	n := strings.Count(str, "") - 1
+	var num string
+	for i := 0; i < n; i++ {
+		numberStr := string([]rune(str)[i : i+1])
+		bol, _ := regexp.Match(`\d`, []byte(numberStr))
+		if bol == true {
+			number, err := strconv.Atoi(numberStr)
+			if err != nil {
+				return "", errors.New("转中文数字出错")
+			}
+			chinese := chineses[number]
+			num += chinese
+		} else {
+			num += numberStr
+		}
+	}
+	return string(num), nil
+}
+
 //读取主板序列号 GetSystemUUID
 func GetSystemUUID() string {
 	rc, _, err := smbios.Stream()

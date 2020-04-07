@@ -56,7 +56,9 @@ func orderParam(source interface{}, bizKey string) (returnStr string) {
 			}
 			keys = append(keys, k)
 		}
-		sort.Strings(keys)
+		sort.Slice(keys, func(i int, j int) bool {
+			return strings.ToLower(keys[i]) < strings.ToLower(keys[j])
+		})
 		var buf bytes.Buffer
 		for _, k := range keys {
 			if v[k] == "" {
@@ -81,7 +83,9 @@ func orderParam(source interface{}, bizKey string) (returnStr string) {
 			}
 			keys = append(keys, k)
 		}
-		sort.Strings(keys)
+		sort.Slice(keys, func(i int, j int) bool {
+			return strings.ToLower(keys[i]) < strings.ToLower(keys[j])
+		})
 		var buf bytes.Buffer
 		for _, k := range keys {
 			if v[k] == "" {
@@ -137,7 +141,9 @@ func Struct2map(content interface{}, bizKey string) string {
 		i++
 		tempArr = append(tempArr, k+"="+v)
 	}
-	sort.Strings(tempArr)
+	sort.Slice(tempArr, func(i int, j int) bool {
+		return strings.ToLower(tempArr[i]) < strings.ToLower(tempArr[j])
+	})
 	for n, v := range tempArr {
 		if n+1 < len(tempArr) {
 			temString = temString + v + "&"
@@ -174,7 +180,9 @@ func GetXunLianTemp(content interface{}, key string) string {
 		i++
 		tempArr = append(tempArr, k+"="+v)
 	}
-	sort.Strings(tempArr)
+	sort.Slice(tempArr, func(i int, j int) bool {
+		return strings.ToLower(tempArr[i]) < strings.ToLower(tempArr[j])
+	})
 	for n, v := range tempArr {
 		if n+1 < len(tempArr) {
 			temString = temString + v + "&"
