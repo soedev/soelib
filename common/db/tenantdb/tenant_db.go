@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/jinzhu/gorm"
 	"github.com/soedev/soelib/common/des"
+	"github.com/soedev/soelib/common/keylock"
 	"github.com/soedev/soelib/common/utils"
 	"log"
 	"sync"
@@ -61,6 +62,9 @@ func GetDbFromMap(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 		}
 		return sqldb.(*gorm.DB), nil
 	}
+	key := "SQLDB_" + tenantID
+	keylock.GetKeyLockIns().Lock(key)
+	defer keylock.GetKeyLockIns().Unlock(key)
 	newDb, err := GetSQLDb(tenantID, crmdb)
 	if err != nil {
 		return nil, err
