@@ -48,6 +48,9 @@ func GetSQLDb(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 
 //GetDbFromMap 增加数据源到缓存
 func GetDbFromMap(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
+	key := "SQLDB_" + tenantID
+	keylock.GetKeyLockIns().Lock(key)
+	defer keylock.GetKeyLockIns().Unlock(key)
 	if sqldb, isOk := dbMap.Load(tenantID); isOk {
 		if err := sqldb.(*gorm.DB).DB().Ping(); err != nil {
 			dbMap.Delete(tenantID)
@@ -62,9 +65,6 @@ func GetDbFromMap(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 		}
 		return sqldb.(*gorm.DB), nil
 	}
-	key := "SQLDB_" + tenantID
-	keylock.GetKeyLockIns().Lock(key)
-	defer keylock.GetKeyLockIns().Unlock(key)
 	newDb, err := GetSQLDb(tenantID, crmdb)
 	if err != nil {
 		return nil, err
