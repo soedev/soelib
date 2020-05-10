@@ -23,6 +23,12 @@ const WorkWxAPIPath = "https://www.soesoft.org/workwx-rest/api/send-msg-to-chat"
 // WorkWxRestTokenStr 企业微信访问token
 const WorkWxRestTokenStr = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE4NDU3MTYyNzUsImlzcyI6InBvd2VyIiwic3ViIjoie1wiVXNlclVJRFwiOlwiXCIsXCJUZW5hbnRJRFwiOlwiXCIsXCJUZW5hbnRDb2RlXCI6XCJzb2Vzb2Z0XCIsXCJBbGlVc2VyUElEXCI6XCJcIixcIkFsaU1lcmNoYW50UElEXCI6XCJcIixcIkFsaUF1dGhUb2tlblwiOlwiXCIsXCJBbGlBdXRoQ29kZVwiOlwiXCIsXCJPcGVuSURcIjpcIlwiLFwiT3BlbklEMlwiOlwiXCIsXCJMb2dpblR5cGVcIjpcIlwiLFwiSG9sZFNob3BDb2RlXCI6XCJcIixcIkFsaU1lcmNoYW50U2hvcElEXCI6XCJcIn0ifQ.TZccfoDPMFFrZm5nvojaeXiXnEpxKloM5IkdQB2rTBg"
 
+const (
+	SaaSRegChatID = "wrgmF8DgAA9wvYIGK6U1zNqMCbH2RsWw" //SAAS 软件通知群
+
+	SaaSWorkWxAPIPath = "http://192.168.1.89:37837/api/send-msg-to-chat" // 内网访问 微信的url
+)
+
 // SendMsgToWorkWx 发送信息到企业微信会话
 func SendMsgToWorkWx(chatid, content, apiPath, tokenStr string) error {
 	/*

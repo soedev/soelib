@@ -54,7 +54,7 @@ func GetDbFromMap(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 	defer keylock.GetKeyLockIns().Unlock(key)
 	if sqldb, isOk := dbMap.Load(tenantID); isOk {
 		db := sqldb.(*gorm.DB)
-		go senMsgToWx(tenantID, db.DB().Stats())
+		//go senMsgToWx(tenantID, db.DB().Stats())
 		if err := db.DB().Ping(); err != nil {
 			db.Close()
 			dbMap.Delete(tenantID)
