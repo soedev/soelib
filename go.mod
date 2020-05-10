@@ -5,6 +5,7 @@ go 1.14
 require (
 	github.com/HuKeping/rbtree v0.0.0-20200208030951-29f0b79e84ed // indirect
 	github.com/Lofanmi/pinyin-golang v0.0.0-20180808030053-30cdbfc8c2de
+	github.com/afex/hystrix-go v0.0.0-20180502004556-fa1af6a1f4f5
 	github.com/alex023/clock v0.0.0-20191208111215-c265f1b2ab18
 	github.com/astaxie/beego v1.12.1
 	github.com/axgle/mahonia v0.0.0-20180208002826-3358181d7394
