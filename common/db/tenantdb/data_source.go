@@ -28,7 +28,12 @@ func (TenantDataSource) TableName() string {
 //GetByTenantID 根据租户号取得第一条数据源
 func (t *TenantDataSource) GetByTenantID(tenantID string) (*TenantDataSource, error) {
 	var tds []TenantDataSource
-	t.Db.Where("tenant_id = ?", tenantID).Find(&tds)
+	sqlCommon := `SELECT top 1 crm.tenant_datasource.* FROM crm.tenant_datasource 
+			INNER JOIN crm.client on crm.client.tenant_id = crm.tenant_datasource.tenant_id
+			Inner join crm.client_shop On crm.client_shop.client_uid=crm.client.uid
+			WHERE crm.client_shop.is_saas = 1 AND crm.tenant_datasource.tenant_id=? limit 1 
+			`
+	t.Db.Raw(sqlCommon, tenantID).Find(&tds)
 	if len(tds) == 0 {
 		return nil, errors.New("数据源未配置！")
 	}
