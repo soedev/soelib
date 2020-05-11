@@ -17,13 +17,30 @@ type KeyLock struct {
 	mutex         sync.RWMutex          //全局读写锁
 }
 
+var keyLockIns *KeyLock
+var once sync.Once
+
+//GetTimeTaskIns 单例话任务服务
 func GetKeyLockIns() *KeyLock {
-	return &KeyLock{
-		locks:         make(map[string]*innerLock),
-		cleanInterval: defaultCleanInterval,
-		stopChan:      make(chan struct{}),
-	}
+	once.Do(func() {
+		keyLockIns = &KeyLock{
+			locks:         make(map[string]*innerLock),
+			cleanInterval: defaultCleanInterval,
+			stopChan:      make(chan struct{}),
+		}
+	})
+	return keyLockIns
 }
+//
+//func GetKeyLockIns() *KeyLock {
+//	return &KeyLock{
+//		locks:         make(map[string]*innerLock),
+//		cleanInterval: defaultCleanInterval,
+//		stopChan:      make(chan struct{}),
+//	}
+//}
+
+
 
 //根据关键字加锁
 func (l *KeyLock) Lock(key string) {
