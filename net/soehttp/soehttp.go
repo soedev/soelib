@@ -99,7 +99,7 @@ func (soeRemoteService *SoeRemoteService) handleError(resp *http.Response) (err 
 
 //Post post
 func (soeRemoteService *SoeRemoteService) Post(postBody *[]byte) (result []byte, err error) {
-	if soeRemoteService.UseHystrix {
+	//if soeRemoteService.UseHystrix {
 		hystrix.Do("post", func() error {
 			result, err = soeRemoteService.post(postBody)
 			return err
@@ -114,14 +114,14 @@ func (soeRemoteService *SoeRemoteService) Post(postBody *[]byte) (result []byte,
 			return err
 		})
 		return result, err
-	} else {
-		return soeRemoteService.post(postBody)
-	}
+	//} else {
+	//	return soeRemoteService.post(postBody)
+	//}
 }
 
 //Get get
 func (soeRemoteService *SoeRemoteService) Get(newReader io.Reader) (result []byte, err error) {
-	if soeRemoteService.UseHystrix {
+	//if soeRemoteService.UseHystrix {
 		hystrix.Do("get", func() error {
 			result, err = soeRemoteService.get(newReader)
 			return err
@@ -136,9 +136,9 @@ func (soeRemoteService *SoeRemoteService) Get(newReader io.Reader) (result []byt
 			return err
 		})
 		return result, err
-	} else {
-		return soeRemoteService.get(newReader)
-	}
+	//} else {
+	//	return soeRemoteService.get(newReader)
+	//}
 }
 
 func (soeRemoteService *SoeRemoteService) post(postBody *[]byte) ([]byte, error) {
