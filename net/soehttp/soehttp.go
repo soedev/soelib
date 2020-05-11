@@ -181,7 +181,7 @@ func (soeRemoteService *SoeRemoteService) get(newReader io.Reader) ([]byte, erro
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	client := &http.Client{
-		Timeout:   15 * time.Second,
+		Timeout:  5 * time.Second,
 		Transport: tr, //解决x509: certificate signed by unknown authority
 	}
 
