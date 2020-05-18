@@ -21,6 +21,7 @@ require (
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf
 	github.com/jinzhu/gorm v1.9.12
 	github.com/mitchellh/mapstructure v1.1.2
+	github.com/openzipkin/zipkin-go v0.2.2
 	github.com/spf13/viper v1.6.2
 	github.com/ulule/deepcopier v0.0.0-20200117111125-792cfb847af8
 	go.uber.org/zap v1.14.0
