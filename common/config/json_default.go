@@ -13,16 +13,18 @@ import (
 	"github.com/soedev/soelib/common/soelog"
 	"github.com/soedev/soelib/net/emqtt"
 	"github.com/soedev/soelib/net/soetcp"
+	"github.com/soedev/soelib/net/soetrace"
 	"os"
 )
 
 type JsonConfig struct {
 	MongoConfig specialdb.MongoConfig //mogo 数据库连接配置
 	RedisConfig specialdb.RedisConfig //redis 连接配置
-	TCP         soetcp.TcpConfig      //小索辅助配置
-	MQTT        emqttConfig           //MQTT通讯配置
-	ATT         attConfig             //中控考勤机 bs 模式处理配置信息
-	Caller      callerConfig          //来电显示盒配置
+	TraceConfig soetrace.JaegerTracerConfig
+	TCP         soetcp.TcpConfig //小索辅助配置
+	MQTT        emqttConfig      //MQTT通讯配置
+	ATT         attConfig        //中控考勤机 bs 模式处理配置信息
+	Caller      callerConfig     //来电显示盒配置
 }
 
 //emqtt  服务端以及客户端配置
@@ -106,5 +108,13 @@ func (s *JsonConfig) Check() {
 	}
 	if s.MongoConfig.Password != "" {
 		s.MongoConfig.Password = des.DecryptDESECB([]byte(s.MongoConfig.Password), des.DesKey)
+	}
+
+	//全链路跟踪默认值配置
+	if s.TraceConfig.Config.Sampler.Type == "" {
+		s.TraceConfig.Config.Sampler.Type = "const" //固定采样
+	}
+	if s.TraceConfig.Config.Sampler.Param == 0 {
+		s.TraceConfig.Config.Sampler.Param = 1 //全采样
 	}
 }

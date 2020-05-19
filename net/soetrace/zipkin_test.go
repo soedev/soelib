@@ -1,4 +1,4 @@
-package zipkin
+package soetrace
 
 import (
 	"github.com/openzipkin/zipkin-go"
@@ -8,12 +8,12 @@ import (
 
 //测试手工埋点案例
 func TestNewTracer(t *testing.T) {
-	config := Config{
+	config := ZKTracerConfig{
 		ServiceName: "demoService",
 		IP:          "192.168.1.129:80",
 		EnpoitUrl:   "http://192.168.1.206:32019/api/v2/spans",
 	}
-	NewTracer(config)
+	NewZipkinTracer(config)
 	// tracer can now be used to create spans.
 	span := Tracer.StartSpan("会员查询")
 	// ... do some work ...
