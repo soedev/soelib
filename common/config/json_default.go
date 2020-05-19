@@ -12,6 +12,7 @@ import (
 	"github.com/soedev/soelib/common/des"
 	"github.com/soedev/soelib/common/soelog"
 	"github.com/soedev/soelib/net/emqtt"
+	"github.com/soedev/soelib/net/soehttp"
 	"github.com/soedev/soelib/net/soetcp"
 	"github.com/soedev/soelib/net/soetrace"
 	"os"
@@ -21,6 +22,7 @@ type JsonConfig struct {
 	MongoConfig specialdb.MongoConfig //mogo 数据库连接配置
 	RedisConfig specialdb.RedisConfig //redis 连接配置
 	TraceConfig soetrace.JaegerTracerConfig
+	HTTPConfig  soehttp.SoeHTTPConfig
 	TCP         soetcp.TcpConfig //小索辅助配置
 	MQTT        emqttConfig      //MQTT通讯配置
 	ATT         attConfig        //中控考勤机 bs 模式处理配置信息
@@ -116,5 +118,26 @@ func (s *JsonConfig) Check() {
 	}
 	if s.TraceConfig.Config.Sampler.Param == 0 {
 		s.TraceConfig.Config.Sampler.Param = 1 //全采样
+	}
+
+	//HTTP 默认值配置 熔断默认配置
+	if s.HTTPConfig.Hystrix.Timeout == 0 {
+		s.HTTPConfig.Hystrix.Timeout = 5000 //执行command的超时时间(毫秒)
+	}
+	if s.HTTPConfig.Hystrix.MaxConcurrentRequests == 0 {
+		s.HTTPConfig.Hystrix.MaxConcurrentRequests = 8 //command的最大并发量
+	}
+	if s.HTTPConfig.Hystrix.SleepWindow == 0 {
+		s.HTTPConfig.Hystrix.SleepWindow = 1000 //过多长时间，熔断器再次检测是否开启。单位毫秒
+	}
+	if s.HTTPConfig.Hystrix.ErrorPercentThreshold == 0 {
+		s.HTTPConfig.Hystrix.ErrorPercentThreshold = 30 //错误率 请求数量大于等于RequestVolumeThreshold并且错误率到达这个百分比后就会启动
+	}
+	if s.HTTPConfig.Hystrix.RequestVolumeThreshold == 0 {
+		s.HTTPConfig.Hystrix.RequestVolumeThreshold = 5 //请求阈值(一个统计窗口10秒内请求数量)  熔断器是否打开首先要满足这个条件；这里的设置表示至少有5个请求才进行ErrorPercentThreshold错误百分比计算
+	}
+	//HTTP 默认值配置 告警
+	if s.HTTPConfig.Alarm.ApiPath == "" {
+		s.HTTPConfig.Alarm.ApiPath = "https://www.soesoft.org/workwx-rest/api/send-msg-to-chat"
 	}
 }

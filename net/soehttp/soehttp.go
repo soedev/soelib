@@ -10,6 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/mitchellh/mapstructure"
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -18,8 +21,6 @@ import (
 	"github.com/afex/hystrix-go/hystrix"
 	"github.com/gin-gonic/gin"
 	"github.com/soedev/soelib/common/utils"
-
-	"github.com/mitchellh/mapstructure"
 )
 
 //SoeRemoteService 在线服务
@@ -27,9 +28,7 @@ type SoeRemoteService struct {
 	URL                string
 	Token              string
 	TenantID, ShopCode string //门店信息
-	UseHystrix         bool
 	Context            *gin.Context
-	UseTracing         bool
 }
 
 //SoeRestAPIException 异常
@@ -40,31 +39,234 @@ type SoeRestAPIException struct {
 	Path      string `json:"path"`
 }
 
-type hystrixFallMsgSendConfig struct {
-	IsSendToWx bool
-	ChatID     string
-	ApiPath    string
+//告警配置
+type AlarmConfig struct {
+	SendErrorToWx bool   //发送微信告警
+	ChatID        string //微信群id
+	ApiPath       string //微信发送路径
 }
 
-//熔断配置方案
-var config = hystrix.CommandConfig{
-	Timeout:                5000, //执行command的超时时间(毫秒)
-	MaxConcurrentRequests:  8,    //command的最大并发量
-	SleepWindow:            1000, //过多长时间，熔断器再次检测是否开启。单位毫秒
-	ErrorPercentThreshold:  30,   //错误率 请求数量大于等于RequestVolumeThreshold并且错误率到达这个百分比后就会启动
-	RequestVolumeThreshold: 5,    //请求阈值(一个统计窗口10秒内请求数量)  熔断器是否打开首先要满足这个条件；这里的设置表示至少有5个请求才进行ErrorPercentThreshold错误百分比计算
+type SoeHTTPConfig struct {
+	Alarm   AlarmConfig           //告警配置
+	Hystrix hystrix.CommandConfig //熔断配置
 }
 
-var HttpErrorSendConfig = hystrixFallMsgSendConfig{
-	IsSendToWx: false,
+var alarm = AlarmConfig{
+	SendErrorToWx: false,
 }
 
-//默认熔断配置
-func init() {
-	hystrix.ConfigureCommand("get", config)
-	hystrix.ConfigureCommand("post", config)
+const (
+	remotePost = "RemotePost"
+	remoteGET  = "RemoteGET"
+	remoteDel  = "RemoteDELETE"
+)
+
+//初始化http 配置信息
+func InitConfig(config SoeHTTPConfig) {
+	alarm = config.Alarm
+	hystrix.ConfigureCommand(remotePost, config.Hystrix)
+	hystrix.ConfigureCommand(remoteGET, config.Hystrix)
+	hystrix.ConfigureCommand(remoteDel, config.Hystrix)
+}
+func Remote(url string, args ...string) *SoeRemoteService {
+	soeRemoteService := SoeRemoteService{URL: url, Context: nil}
+	switch len(args) {
+	case 1:
+		soeRemoteService.Token = args[0]
+	case 2:
+		soeRemoteService.Token = args[0]
+		soeRemoteService.TenantID = args[1]
+	case 3:
+		soeRemoteService.Token = args[0]
+		soeRemoteService.TenantID = args[1]
+		soeRemoteService.ShopCode = args[2]
+	}
+	return &soeRemoteService
 }
 
+func RemoteWithContent(content *gin.Context, url string, args ...string) *SoeRemoteService {
+	soeRemoteService := SoeRemoteService{URL: url, Context: content}
+	switch len(args) {
+	case 1:
+		soeRemoteService.Token = args[0]
+	case 2:
+		soeRemoteService.Token = args[0]
+		soeRemoteService.TenantID = args[1]
+	case 3:
+		soeRemoteService.Token = args[0]
+		soeRemoteService.TenantID = args[1]
+		soeRemoteService.ShopCode = args[2]
+	}
+	return &soeRemoteService
+}
+
+func (soeRemoteService *SoeRemoteService) Post(postBody *[]byte) ([]byte, error) {
+	req, err := http.NewRequest("POST", soeRemoteService.URL, bytes.NewReader(*postBody))
+	if err != nil {
+		return nil, err
+	}
+	return soeRemoteService.do(req, "RemotePost")
+}
+
+//get  get 请求
+func (soeRemoteService *SoeRemoteService) Get(newReader io.Reader) ([]byte, error) {
+	req, err := http.NewRequest("GET", soeRemoteService.URL, newReader)
+	if err != nil {
+		return nil, err
+	}
+	return soeRemoteService.do(req, "RemoteGET")
+}
+
+func (soeRemoteService *SoeRemoteService) Delete(newReader io.Reader) ([]byte, error) {
+	req, err := http.NewRequest("DELETE", soeRemoteService.URL, newReader)
+	if err != nil {
+		return nil, err
+	}
+	return soeRemoteService.do(req, "RemoteDELETE")
+}
+
+func (soeRemoteService *SoeRemoteService) DeleteEntity(v interface{}) error {
+	body, err := soeRemoteService.Delete(nil)
+	if err != nil {
+		return err
+	}
+	if body == nil {
+		return errors.New("为查询到任何信息")
+	}
+	err = json.Unmarshal(body, v)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (soeRemoteService *SoeRemoteService) GetEntity(v interface{}) error {
+	body, err := soeRemoteService.Get(nil)
+	if err != nil {
+		return err
+	}
+	if body == nil {
+		return errors.New("为查询到任何信息")
+	}
+	err = json.Unmarshal(body, v)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (soeRemoteService *SoeRemoteService) PostEntity(v interface{}, r interface{}) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	body, err := soeRemoteService.Post(&b)
+	if err != nil {
+		return err
+	}
+	if body == nil {
+		return errors.New("为查询到任何信息")
+	}
+	err = json.Unmarshal(body, r)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (soeRemoteService *SoeRemoteService) do(req *http.Request, operationName string) ([]byte, error) {
+	tr := &http.Transport{ //解决x509: certificate signed by unknown authority
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: tr, //解决x509: certificate signed by unknown authority
+	}
+	req.Header.Add("Content-Type", "application/json;charset=utf-8")
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	if soeRemoteService.Token != "" {
+		req.Header.Set("Authorization", soeRemoteService.Token)
+	}
+	if soeRemoteService.TenantID != "" {
+		req.Header.Set("tenantId", soeRemoteService.TenantID)
+	}
+	if soeRemoteService.ShopCode != "" {
+		req.Header.Set("shopCode", soeRemoteService.ShopCode)
+	}
+	if span, isOk := soeRemoteService.checkTracer(req, operationName); isOk {
+		defer span.Finish()
+		body, err := soeRemoteService.hyDo(client, req, operationName)
+		if err != nil {
+			span.SetTag("error", true)
+			if err.Error() == "fallback" {
+				span.LogKV("error", "发生熔断错误")
+			} else {
+				span.LogKV("error", err.Error())
+			}
+			return nil, err
+		}
+		return body, err
+	} else {
+		return soeRemoteService.hyDo(client, req, operationName)
+	}
+}
+
+//检测连接追踪
+func (soeRemoteService *SoeRemoteService) checkTracer(req *http.Request, operationName string) (opentracing.Span, bool) {
+	if soeRemoteService.Context != nil {
+		tracer, isExists1 := soeRemoteService.Context.Get("Tracer")
+		parentSpanContext, isExists2 := soeRemoteService.Context.Get("ParentSpanContext")
+		if isExists1 && isExists2 {
+			span := opentracing.StartSpan(
+				operationName,
+				opentracing.ChildOf(parentSpanContext.(opentracing.SpanContext)),
+				opentracing.Tag{Key: string(ext.Component), Value: "HTTP"},
+				ext.SpanKindRPCClient,
+			)
+			if soeRemoteService.TenantID != "" {
+				span.SetTag("tenantId", soeRemoteService.TenantID)
+			}
+			if soeRemoteService.ShopCode != "" {
+				span.SetTag("shopCode", soeRemoteService.ShopCode)
+			}
+			injectErr := tracer.(opentracing.Tracer).Inject(span.Context(), opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(req.Header))
+			if injectErr != nil {
+				span.Finish()
+				return nil, false
+			}
+			return span, true
+		}
+	}
+	return nil, false
+}
+
+func (soeRemoteService *SoeRemoteService) hyDo(client *http.Client, req *http.Request, operationName string) (result []byte, err error) {
+	hystrix.Do(operationName, func() error {
+		var respond *http.Response
+		respond, err = client.Do(req)
+		if err != nil {
+			return err
+		}
+		result, err = ioutil.ReadAll(respond.Body)
+		if err != nil {
+			return err
+		}
+		defer respond.Body.Close()
+		return err
+	}, func(err error) error {
+		if alarm.SendErrorToWx {
+			if alarm.ChatID != "" && alarm.ApiPath != "" {
+				content := fmt.Sprintf("GET 请求发生熔断错误！ URL:%s TenantID:%s", soeRemoteService.URL, soeRemoteService.TenantID)
+				go utils.SendMsgToWorkWx(alarm.ChatID, content, alarm.ApiPath, utils.WorkWxRestTokenStr)
+			}
+		}
+		err = errors.New("fallback")
+		return err
+	})
+	return result, err
+}
+
+//错误解析
 func (soeRemoteService *SoeRemoteService) handleError(resp *http.Response) (err error) {
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
 		err = errors.New(http.StatusText(resp.StatusCode))
@@ -98,291 +300,4 @@ func (soeRemoteService *SoeRemoteService) handleError(resp *http.Response) (err 
 	}
 	err = errors.New("服务器太忙了，请稍后再试！")
 	return err
-
-}
-
-//Post post
-func (soeRemoteService *SoeRemoteService) Post(postBody *[]byte) (result []byte, err error) {
-	//if soeRemoteService.UseHystrix {
-	hystrix.Do("post", func() error {
-		result, err = soeRemoteService.post(postBody)
-		return err
-	}, func(err error) error {
-		if HttpErrorSendConfig.IsSendToWx {
-			if HttpErrorSendConfig.ChatID != "" && HttpErrorSendConfig.ApiPath != "" {
-				content := fmt.Sprintf("POST 请求发生熔断错误！ URL:%s TenantID:%s", soeRemoteService.URL, soeRemoteService.TenantID)
-				go utils.SendMsgToWorkWx(HttpErrorSendConfig.ChatID, content, HttpErrorSendConfig.ApiPath, utils.WorkWxRestTokenStr)
-			}
-		}
-		err = errors.New("fallback")
-		return err
-	})
-	return result, err
-	//} else {
-	//	return soeRemoteService.post(postBody)
-	//}
-}
-
-//Get get
-func (soeRemoteService *SoeRemoteService) Get(newReader io.Reader) (result []byte, err error) {
-	//if soeRemoteService.UseHystrix {
-	hystrix.Do("get", func() error {
-		result, err = soeRemoteService.get(newReader)
-		return err
-	}, func(err error) error {
-		if HttpErrorSendConfig.IsSendToWx {
-			if HttpErrorSendConfig.ChatID != "" && HttpErrorSendConfig.ApiPath != "" {
-				content := fmt.Sprintf("GET 请求发生熔断错误！ URL:%s TenantID:%s", soeRemoteService.URL, soeRemoteService.TenantID)
-				go utils.SendMsgToWorkWx(HttpErrorSendConfig.ChatID, content, HttpErrorSendConfig.ApiPath, utils.WorkWxRestTokenStr)
-			}
-		}
-		err = errors.New("fallback")
-		return err
-	})
-	return result, err
-	//} else {
-	//	return soeRemoteService.get(newReader)
-	//}
-}
-
-func (soeRemoteService *SoeRemoteService) post(postBody *[]byte) ([]byte, error) {
-	tr := &http.Transport{ //解决x509: certificate signed by unknown authority
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{
-		Timeout:   15 * time.Second,
-		Transport: tr, //解决x509: certificate signed by unknown authority
-	}
-	req, err := http.NewRequest("POST", soeRemoteService.URL, bytes.NewReader(*postBody))
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", "application/json;charset=utf-8")
-	if soeRemoteService.Token != "" {
-		req.Header.Set("Authorization", soeRemoteService.Token)
-	}
-	if soeRemoteService.TenantID != "" {
-		req.Header.Set("tenantId", soeRemoteService.TenantID)
-	}
-	if soeRemoteService.ShopCode != "" {
-		req.Header.Set("shopCode", soeRemoteService.ShopCode)
-	}
-
-
-	if soeRemoteService.UseTracing  {
-		
-		tracer, _ := soeRemoteService.Context.Get("Tracer")
-		parentSpanContext, _ := soeRemoteService.Context.Get("ParentSpanContext")
-
-		span := opentracing.StartSpan(
-			"SoeRemoteService-Post",
-			opentracing.ChildOf(parentSpanContext.(opentracing.SpanContext)),
-			opentracing.Tag{Key: string(ext.Component), Value: "HTTP"},
-			ext.SpanKindRPCClient,
-		)
-
-		if soeRemoteService.TenantID != "" {
-			span.SetTag("tenantId", soeRemoteService.TenantID
-		}
-
-		if soeRemoteService.ShopCode != "" {
-			span.SetTag("shopCode", soeRemoteService.ShopCode)
-		}
-
-
-		defer span.Finish()
-
-		injectErr := tracer.(opentracing.Tracer).Inject(span.Context(), opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(req.Header))
-		if injectErr != nil {
-			
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			span.SetTag("error", true)
-			span.LogEventWithPayload("error", err.Error())
-			return nil, err
-		}
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			span.SetTag("error", true)
-			span.LogEventWithPayload("error", err.Error())
-			return nil, err
-		}
-		defer resp.Body.Close()
-		return body, err
-
-	} else {
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-		return body, err
-	}
-
-}
-
-func (soeRemoteService *SoeRemoteService) get(newReader io.Reader) ([]byte, error) {
-	tr := &http.Transport{ //解决x509: certificate signed by unknown authority
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{
-		Timeout:   5 * time.Second,
-		Transport: tr, //解决x509: certificate signed by unknown authority
-	}
-
-	req, err := http.NewRequest("GET", soeRemoteService.URL, newReader)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	if soeRemoteService.Token != "" {
-		req.Header.Set("Authorization", soeRemoteService.Token)
-	}
-	if soeRemoteService.TenantID != "" {
-		req.Header.Set("tenantId", soeRemoteService.TenantID)
-	}
-	if soeRemoteService.ShopCode != "" {
-		req.Header.Set("shopCode", soeRemoteService.ShopCode)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	defer resp.Body.Close()
-
-	return body, err
-}
-
-func (soeRemoteService *SoeRemoteService) Delete(newReader io.Reader) ([]byte, error) {
-	tr := &http.Transport{ //解决x509: certificate signed by unknown authority
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{
-		Timeout:   15 * time.Second,
-		Transport: tr, //解决x509: certificate signed by unknown authority
-	}
-	req, err := http.NewRequest("DELETE", soeRemoteService.URL, newReader)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	if soeRemoteService.Token != "" {
-		req.Header.Set("Authorization", soeRemoteService.Token)
-	}
-	if soeRemoteService.TenantID != "" {
-		req.Header.Set("tenantId", soeRemoteService.TenantID)
-	}
-	if soeRemoteService.ShopCode != "" {
-		req.Header.Set("shopCode", soeRemoteService.ShopCode)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if !(resp.StatusCode >= 200 && resp.StatusCode <= 207) {
-		err = soeRemoteService.handleError(resp)
-		return nil, err
-	}
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	return body, err
-}
-
-func Remote(url string, args ...string) *SoeRemoteService {
-	soeRemoteService := SoeRemoteService{URL: url, UseHystrix: false}
-	switch len(args) {
-	case 1:
-		soeRemoteService.Token = args[0]
-	case 2:
-		soeRemoteService.Token = args[0]
-		soeRemoteService.TenantID = args[1]
-	case 3:
-		soeRemoteService.Token = args[0]
-		soeRemoteService.TenantID = args[1]
-		soeRemoteService.ShopCode = args[2]
-	}
-	return &soeRemoteService
-}
-
-func RemoteUseHystrix(url string, args ...string) *SoeRemoteService {
-	soeRemoteService := SoeRemoteService{URL: url, UseHystrix: true}
-	switch len(args) {
-	case 1:
-		soeRemoteService.Token = args[0]
-	case 2:
-		soeRemoteService.Token = args[0]
-		soeRemoteService.TenantID = args[1]
-	case 3:
-		soeRemoteService.Token = args[0]
-		soeRemoteService.TenantID = args[1]
-		soeRemoteService.ShopCode = args[2]
-	}
-	return &soeRemoteService
-}
-
-func (soeRemoteService *SoeRemoteService) DeleteEntity(v interface{}) error {
-	body, err := soeRemoteService.Delete(nil)
-	if err != nil {
-		return err
-	}
-	if body == nil {
-		return errors.New("为查询到任何信息")
-	}
-	err = json.Unmarshal(body, v)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (soeRemoteService *SoeRemoteService) GetEntity(v interface{}) error {
-	body, err := soeRemoteService.Get(nil)
-	if err != nil {
-		return err
-	}
-	if body == nil {
-		return errors.New("为查询到任何信息")
-	}
-	err = json.Unmarshal(body, v)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-func (soeRemoteService *SoeRemoteService) PostEntity(v interface{}, r interface{}) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	body, err := soeRemoteService.Post(&b)
-	if err != nil {
-		return err
-	}
-	if body == nil {
-		return errors.New("为查询到任何信息")
-	}
-	err = json.Unmarshal(body, r)
-	if err != nil {
-		return err
-	}
-	return nil
 }
