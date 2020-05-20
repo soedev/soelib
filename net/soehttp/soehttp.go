@@ -10,12 +10,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/afex/hystrix-go/hystrix"
-	"github.com/soedev/soelib/common/utils"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"time"
+
+	"github.com/afex/hystrix-go/hystrix"
+	"github.com/gin-gonic/gin"
+	"github.com/soedev/soelib/common/utils"
 
 	"github.com/mitchellh/mapstructure"
 )
@@ -26,6 +28,8 @@ type SoeRemoteService struct {
 	Token              string
 	TenantID, ShopCode string //门店信息
 	UseHystrix         bool
+	Context            *gin.Context
+	UseTracing         bool
 }
 
 //SoeRestAPIException 异常
@@ -100,20 +104,20 @@ func (soeRemoteService *SoeRemoteService) handleError(resp *http.Response) (err 
 //Post post
 func (soeRemoteService *SoeRemoteService) Post(postBody *[]byte) (result []byte, err error) {
 	//if soeRemoteService.UseHystrix {
-		hystrix.Do("post", func() error {
-			result, err = soeRemoteService.post(postBody)
-			return err
-		}, func(err error) error {
-			if HttpErrorSendConfig.IsSendToWx {
-				if HttpErrorSendConfig.ChatID != "" && HttpErrorSendConfig.ApiPath != "" {
-					content := fmt.Sprintf("POST 请求发生熔断错误！ URL:%s TenantID:%s", soeRemoteService.URL, soeRemoteService.TenantID)
-					go utils.SendMsgToWorkWx(HttpErrorSendConfig.ChatID, content, HttpErrorSendConfig.ApiPath, utils.WorkWxRestTokenStr)
-				}
+	hystrix.Do("post", func() error {
+		result, err = soeRemoteService.post(postBody)
+		return err
+	}, func(err error) error {
+		if HttpErrorSendConfig.IsSendToWx {
+			if HttpErrorSendConfig.ChatID != "" && HttpErrorSendConfig.ApiPath != "" {
+				content := fmt.Sprintf("POST 请求发生熔断错误！ URL:%s TenantID:%s", soeRemoteService.URL, soeRemoteService.TenantID)
+				go utils.SendMsgToWorkWx(HttpErrorSendConfig.ChatID, content, HttpErrorSendConfig.ApiPath, utils.WorkWxRestTokenStr)
 			}
-			err = errors.New("fallback")
-			return err
-		})
-		return result, err
+		}
+		err = errors.New("fallback")
+		return err
+	})
+	return result, err
 	//} else {
 	//	return soeRemoteService.post(postBody)
 	//}
@@ -122,20 +126,20 @@ func (soeRemoteService *SoeRemoteService) Post(postBody *[]byte) (result []byte,
 //Get get
 func (soeRemoteService *SoeRemoteService) Get(newReader io.Reader) (result []byte, err error) {
 	//if soeRemoteService.UseHystrix {
-		hystrix.Do("get", func() error {
-			result, err = soeRemoteService.get(newReader)
-			return err
-		}, func(err error) error {
-			if HttpErrorSendConfig.IsSendToWx {
-				if HttpErrorSendConfig.ChatID != "" && HttpErrorSendConfig.ApiPath != "" {
-					content := fmt.Sprintf("GET 请求发生熔断错误！ URL:%s TenantID:%s", soeRemoteService.URL, soeRemoteService.TenantID)
-					go utils.SendMsgToWorkWx(HttpErrorSendConfig.ChatID, content, HttpErrorSendConfig.ApiPath, utils.WorkWxRestTokenStr)
-				}
+	hystrix.Do("get", func() error {
+		result, err = soeRemoteService.get(newReader)
+		return err
+	}, func(err error) error {
+		if HttpErrorSendConfig.IsSendToWx {
+			if HttpErrorSendConfig.ChatID != "" && HttpErrorSendConfig.ApiPath != "" {
+				content := fmt.Sprintf("GET 请求发生熔断错误！ URL:%s TenantID:%s", soeRemoteService.URL, soeRemoteService.TenantID)
+				go utils.SendMsgToWorkWx(HttpErrorSendConfig.ChatID, content, HttpErrorSendConfig.ApiPath, utils.WorkWxRestTokenStr)
 			}
-			err = errors.New("fallback")
-			return err
-		})
-		return result, err
+		}
+		err = errors.New("fallback")
+		return err
+	})
+	return result, err
 	//} else {
 	//	return soeRemoteService.get(newReader)
 	//}
@@ -164,16 +168,64 @@ func (soeRemoteService *SoeRemoteService) post(postBody *[]byte) ([]byte, error)
 	if soeRemoteService.ShopCode != "" {
 		req.Header.Set("shopCode", soeRemoteService.ShopCode)
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
+
+
+	if soeRemoteService.UseTracing  {
+		
+		tracer, _ := soeRemoteService.Context.Get("Tracer")
+		parentSpanContext, _ := soeRemoteService.Context.Get("ParentSpanContext")
+
+		span := opentracing.StartSpan(
+			"SoeRemoteService-Post",
+			opentracing.ChildOf(parentSpanContext.(opentracing.SpanContext)),
+			opentracing.Tag{Key: string(ext.Component), Value: "HTTP"},
+			ext.SpanKindRPCClient,
+		)
+
+		if soeRemoteService.TenantID != "" {
+			span.SetTag("tenantId", soeRemoteService.TenantID
+		}
+
+		if soeRemoteService.ShopCode != "" {
+			span.SetTag("shopCode", soeRemoteService.ShopCode)
+		}
+
+
+		defer span.Finish()
+
+		injectErr := tracer.(opentracing.Tracer).Inject(span.Context(), opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(req.Header))
+		if injectErr != nil {
+			
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			span.SetTag("error", true)
+			span.LogEventWithPayload("error", err.Error())
+			return nil, err
+		}
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			span.SetTag("error", true)
+			span.LogEventWithPayload("error", err.Error())
+			return nil, err
+		}
+		defer resp.Body.Close()
+		return body, err
+
+	} else {
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		return body, err
 	}
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	return body, err
+
 }
 
 func (soeRemoteService *SoeRemoteService) get(newReader io.Reader) ([]byte, error) {
@@ -181,7 +233,7 @@ func (soeRemoteService *SoeRemoteService) get(newReader io.Reader) ([]byte, erro
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	client := &http.Client{
-		Timeout:  5 * time.Second,
+		Timeout:   5 * time.Second,
 		Transport: tr, //解决x509: certificate signed by unknown authority
 	}
 
