@@ -25,6 +25,55 @@ const (
 	cOTTrunc     = 4 //----直接切去小数
 )
 
+func CreateVersum(ver string, Separator string, SeparatorCount int) int64 {
+	//版本分隔 数量 不能大于 3 案例 软件版本 18.1.134.0   脚本版本 V10.1__ADD.sql
+	rexp := regexp.MustCompile(`\d+(\` + Separator + `\d+){0,3}`)
+	var multipliers []int
+	switch SeparatorCount {
+	case 1:
+		rexp = regexp.MustCompile(`\d+(\` + Separator + `\d+){0,1}`)
+		multipliers = append(multipliers, 10)
+		multipliers = append(multipliers, 1)
+	case 2:
+		rexp = regexp.MustCompile(`\d+(\` + Separator + `\d+){0,2}`)
+		multipliers = append(multipliers, 100)
+		multipliers = append(multipliers, 10)
+		multipliers = append(multipliers, 1)
+	default:
+		multipliers = append(multipliers, 1000)
+		multipliers = append(multipliers, 100)
+		multipliers = append(multipliers, 10)
+		multipliers = append(multipliers, 1)
+		SeparatorCount = 3
+	}
+	resultVers := rexp.FindAllString(ver, -1)
+	if len(resultVers) == 0 {
+		return 0
+	}
+	numVers := strings.Split(resultVers[0], Separator)
+	intDex := 0
+	sum := int64(0)
+	for _, nuber := range numVers {
+		i, _ := strconv.Atoi(nuber)
+		if intDex <= SeparatorCount {
+			i = i * multipliers[intDex]
+			intDex++
+		}
+		sum += int64(i)
+	}
+	return sum
+}
+
+//CheckVer 转换成正确的版本号
+func CheckVer(ver, Separator string) string {
+	rexp := regexp.MustCompile(`\d+(\` + Separator + `\d+){0,3}`)
+	resultVers := rexp.FindAllString(ver, -1)
+	if len(resultVers) == 0 {
+		return ""
+	}
+	return resultVers[0]
+}
+
 //CalcOddment 取零方式计算结果
 func CalcOddment(oddmentType int, value float64) float64 {
 	result := value
