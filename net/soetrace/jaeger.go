@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/opentracing/opentracing-go/log"
@@ -54,6 +55,40 @@ func NewJaegerTracer(jtconfig JaegerTracerConfig) (opentracing.Tracer, io.Closer
 	}
 	opentracing.SetGlobalTracer(tracer)
 	return tracer, closer
+}
+
+//GetNewSpanFromContext 获取新的Span用来记录
+func GetNewSpanFromContext(c *gin.Context, operationName string) (opentracing.Span, bool) {
+	if c != nil {
+		tracer, isExists1 := c.Get("Tracer")
+		parentSpanContext, isExists2 := c.Get("ParentSpanContext")
+		if isExists1 && isExists2 {
+			span := opentracing.StartSpan(
+				operationName,
+				opentracing.ChildOf(parentSpanContext.(opentracing.SpanContext)),
+				opentracing.Tag{Key: string(ext.Component), Value: "HTTP"},
+				ext.SpanKindRPCClient,
+			)
+			tenantID := c.Request.Header.Get("tenantId")
+			if tenantID != "" {
+				span.SetTag("tenantId", tenantID)
+			}
+
+			shopCode := c.Request.Header.Get("shopCode")
+			if shopCode != "" {
+				span.SetTag("shopCode", shopCode)
+			}
+
+			injectErr := tracer.(opentracing.Tracer).Inject(span.Context(), opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(c.Request.Header))
+			if injectErr != nil {
+				span.Finish()
+				return nil, false
+			}
+			return span, true
+		}
+	}
+	span := opentracing.StartSpan(operationName)
+	return span, true
 }
 
 // ForeachKey implements ForeachKey of opentracing.TextMapReader
