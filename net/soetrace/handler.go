@@ -13,7 +13,7 @@ func SetUpUseJaeger(config JaegerTracerConfig) gin.HandlerFunc {
 			// tracer, closer := NewJaegerTracer(config)
 			// defer closer.Close()
 			spCtx, err := opentracing.GlobalTracer().Extract(opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(c.Request.Header))
-			if err == nil {
+			if err != nil {
 				parentSpan = opentracing.StartSpan(c.Request.URL.Path)
 				defer parentSpan.Finish()
 			} else {

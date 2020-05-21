@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jinzhu/gorm"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/opentracing/opentracing-go/log"
-	"github.com/uber/jaeger-client-go"
 	"github.com/uber/jaeger-client-go/config"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -34,9 +34,20 @@ type MDReaderWriter struct {
 }
 
 func NewJaegerTracer(jtconfig JaegerTracerConfig) (opentracing.Tracer, io.Closer) {
+	tracer, closer := initJaegerTracer(jtconfig.Config.ServiceName, jtconfig)
+
+	opentracing.SetGlobalTracer(tracer)
+
+	initMongoJaegerTracer(jtconfig)
+
+	initDBJaegerTracer(jtconfig)
+	return tracer, closer
+}
+
+func initJaegerTracer(serviceName string, jtconfig JaegerTracerConfig) (opentracing.Tracer, io.Closer) {
 	cfg := &config.Configuration{
 		Sampler:     &jtconfig.Config.Sampler,
-		ServiceName: jtconfig.Config.ServiceName,
+		ServiceName: serviceName,
 	}
 	if jtconfig.UseAliTracer {
 		cfg.Reporter = &config.ReporterConfig{
@@ -49,25 +60,37 @@ func NewJaegerTracer(jtconfig JaegerTracerConfig) (opentracing.Tracer, io.Closer
 			LocalAgentHostPort: jtconfig.Config.Endpoint,
 		}
 	}
-	tracer, closer, err := cfg.NewTracer(config.Logger(jaeger.StdLogger))
+	tracer, closer, err := cfg.NewTracer()
 	if err != nil {
 		panic(fmt.Sprintf("ERROR: cannot init Jaeger: %v\n", err))
 	}
-	opentracing.SetGlobalTracer(tracer)
 	return tracer, closer
+}
+
+var mongoTracer opentracing.Tracer
+
+//GetTimeTaskIns 单例话任务服务
+func initMongoJaegerTracer(jtconfig JaegerTracerConfig) {
+	mongoTracer, _ = initJaegerTracer("mongo", jtconfig)
+}
+
+var dbTracer opentracing.Tracer
+
+//GetTimeTaskIns 单例话任务服务
+func initDBJaegerTracer(jtconfig JaegerTracerConfig) {
+	dbTracer, _ = initJaegerTracer("mssql", jtconfig)
 }
 
 //GetNewSpanFromContext 获取新的Span用来记录
 func GetNewSpanFromContext(c *gin.Context, operationName string) (opentracing.Span, bool) {
 	if c != nil {
-		tracer, isExists1 := c.Get("Tracer")
+		// tracer, isExists1 := c.Get("Tracer")
 		parentSpanContext, isExists2 := c.Get("ParentSpanContext")
-		if isExists1 && isExists2 {
+		if isExists2 {
 			span := opentracing.StartSpan(
 				operationName,
 				opentracing.ChildOf(parentSpanContext.(opentracing.SpanContext)),
-				opentracing.Tag{Key: string(ext.Component), Value: "HTTP"},
-				ext.SpanKindRPCClient,
+				opentracing.Tags{},
 			)
 			tenantID := c.Request.Header.Get("tenantId")
 			if tenantID != "" {
@@ -79,16 +102,80 @@ func GetNewSpanFromContext(c *gin.Context, operationName string) (opentracing.Sp
 				span.SetTag("shopCode", shopCode)
 			}
 
-			injectErr := tracer.(opentracing.Tracer).Inject(span.Context(), opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(c.Request.Header))
-			if injectErr != nil {
-				span.Finish()
-				return nil, false
-			}
+			// injectErr := tracer.(opentracing.Tracer).Inject(span.Context(), opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(c.Request.Header))
+			// if injectErr != nil {
+			// 	span.Finish()
+			// 	return nil, false
+			// }
 			return span, true
 		}
 	}
-	span := opentracing.StartSpan(operationName)
-	return span, true
+	return nil, false
+}
+
+//GetNewSpanFromContextWithParent 获取新的Span用来记录
+func GetNewSpanFromContextWithParent(c *gin.Context, operationName string, tracer opentracing.Tracer) (opentracing.Span, bool) {
+	if c != nil {
+		// tracer, isExists1 := c.Get("Tracer")
+		rootSpanContext, isRootExists := c.Get("ParentSpanContext")
+		if isRootExists {
+
+			span := tracer.StartSpan(
+				operationName,
+				opentracing.ChildOf(rootSpanContext.(opentracing.SpanContext)),
+				opentracing.Tags{},
+			)
+
+			tenantID := c.Request.Header.Get("tenantId")
+			if tenantID != "" {
+				span.SetTag("tenantId", tenantID)
+			}
+
+			shopCode := c.Request.Header.Get("shopCode")
+			if shopCode != "" {
+				span.SetTag("shopCode", shopCode)
+			}
+
+			return span, true
+		}
+	}
+	return nil, false
+}
+
+//GetNewMongoSpan 获取新的Span用来记录
+func GetNewMongoSpan(c *gin.Context, operationName string, args ...string) (opentracing.Span, bool) {
+	if span, isOk := GetNewSpanFromContextWithParent(c, operationName, mongoTracer); isOk {
+		span.SetTag("db.Type", "mongo")
+		if len(args) >= 1 {
+			span.SetTag("db.DBName", args[0])
+		}
+		if len(args) >= 2 {
+			span.SetTag("db.CollName", args[1])
+		}
+		if len(args) >= 3 {
+			span.SetTag("db.Cmd", args[2])
+		}
+
+		return span, true
+	}
+
+	return nil, false
+}
+
+//GetDBSpan 获取新的Span用来记录
+func GetDBSpan(c *gin.Context, operationName string, g *gorm.DB, args ...string) (opentracing.Span, bool) {
+	if span, isOk := GetNewSpanFromContextWithParent(c, operationName, dbTracer); isOk {
+		span.SetTag("db.Type", "mssql")
+		span.SetTag("db.DBName", g.Dialect().CurrentDatabase())
+
+		if len(args) >= 1 {
+			span.SetTag("db.Cmd", args[2])
+		}
+
+		return span, true
+	}
+
+	return nil, false
 }
 
 // ForeachKey implements ForeachKey of opentracing.TextMapReader
