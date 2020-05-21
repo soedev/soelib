@@ -44,3 +44,25 @@ func (g *Gin) Response(httpCode, errCode int, data interface{}) {
 
 	return
 }
+
+func (g *Gin) ResponseError(httpCode int, errMessage string) {
+	g.C.JSON(httpCode, gin.H{
+		"code": httpCode,
+		"msg":  errMessage,
+		"data": nil,
+	})
+
+	if httpCode != http.StatusOK && httpCode != http.StatusUnauthorized {
+		errorKey := g.ServiceName
+		if g.ShopCode != "" {
+			errorKey = " 门店[" + g.ShopCode + "] " + errorKey
+		}
+		if g.TenantID != "" {
+			errorKey = " 租户[" + g.TenantID + "] " + errorKey
+		}
+		if g.Error != nil {
+			raven.CaptureError(g.Error, map[string]string{"ServiceName": g.ServiceName,
+				"TenantID": g.TenantID, "ShopCode": g.ShopCode, "Version": g.Version})
+		}
+	}
+}
