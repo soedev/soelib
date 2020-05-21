@@ -10,13 +10,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/mitchellh/mapstructure"
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"time"
+
+	"github.com/mitchellh/mapstructure"
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 
 	"github.com/afex/hystrix-go/hystrix"
 	"github.com/gin-gonic/gin"
@@ -174,7 +175,7 @@ func (soeRemoteService *SoeRemoteService) PostEntity(v interface{}, r interface{
 	return nil
 }
 
-func (soeRemoteService *SoeRemoteService) do(req *http.Request, operationName string) ([]byte, error) {
+func (soeRemoteService *SoeRemoteService) do(req *http.Request, operationName string) (result []byte, err error) {
 	tr := &http.Transport{ //解决x509: certificate signed by unknown authority
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
@@ -193,21 +194,84 @@ func (soeRemoteService *SoeRemoteService) do(req *http.Request, operationName st
 	if soeRemoteService.ShopCode != "" {
 		req.Header.Set("shopCode", soeRemoteService.ShopCode)
 	}
-	if span, isOk := soeRemoteService.checkTracer(req, operationName); isOk {
+	if span, isOk := soeRemoteService.checkTracer(req, soeRemoteService.URL); isOk {
 		defer span.Finish()
-		body, err := soeRemoteService.hyDo(client, req, operationName)
-		if err != nil {
-			span.SetTag("error", true)
-			if err.Error() == "fallback" {
-				span.LogKV("error", "发生熔断错误")
-			} else {
+
+		isTagError := false
+		hystrix.Do(operationName, func() error {
+			var respond *http.Response
+			respond, err = client.Do(req)
+			if err != nil {
+				isTagError = true
+				ext.Error.Set(span, true)
 				span.LogKV("error", err.Error())
+				return err
 			}
-			return nil, err
-		}
-		return body, err
+
+			if !(respond.StatusCode >= 200 && respond.StatusCode <= 207) {
+				err = soeRemoteService.handleError(respond)
+				isTagError = true
+				ext.Error.Set(span, true)
+				span.LogKV("error", err.Error())
+				return err
+			}
+
+			result, err = ioutil.ReadAll(respond.Body)
+			if err != nil {
+				isTagError = true
+				ext.Error.Set(span, true)
+				span.LogKV("error", err.Error())
+				return err
+			}
+
+			defer respond.Body.Close()
+			return nil
+		}, func(err error) error {
+			if alarm.SendErrorToWx {
+				if alarm.ChatID != "" && alarm.ApiPath != "" {
+					content := fmt.Sprintf("GET 请求发生熔断错误！ URL:%s TenantID:%s", soeRemoteService.URL, soeRemoteService.TenantID)
+					go utils.SendMsgToWorkWx(alarm.ChatID, content, alarm.ApiPath, utils.WorkWxRestTokenStr)
+				}
+			}
+			err = errors.New("fallback")
+			if !isTagError {
+				ext.Error.Set(span, true)
+			}
+			span.LogKV("error", "熔断错误")
+
+			return err
+		})
+		return result, err
 	} else {
-		return soeRemoteService.hyDo(client, req, operationName)
+		hystrix.Do(operationName, func() error {
+			var respond *http.Response
+			respond, err = client.Do(req)
+			if err != nil {
+				return err
+			}
+
+			if !(respond.StatusCode >= 200 && respond.StatusCode <= 207) {
+				err = soeRemoteService.handleError(respond)
+				return err
+			}
+
+			result, err = ioutil.ReadAll(respond.Body)
+			if err != nil {
+				return err
+			}
+			defer respond.Body.Close()
+			return err
+		}, func(err error) error {
+			if alarm.SendErrorToWx {
+				if alarm.ChatID != "" && alarm.ApiPath != "" {
+					content := fmt.Sprintf("GET 请求发生熔断错误！ URL:%s TenantID:%s", soeRemoteService.URL, soeRemoteService.TenantID)
+					go utils.SendMsgToWorkWx(alarm.ChatID, content, alarm.ApiPath, utils.WorkWxRestTokenStr)
+				}
+			}
+			err = errors.New("fallback")
+			return err
+		})
+		return result, err
 	}
 }
 
@@ -229,6 +293,9 @@ func (soeRemoteService *SoeRemoteService) checkTracer(req *http.Request, operati
 			if soeRemoteService.ShopCode != "" {
 				span.SetTag("shopCode", soeRemoteService.ShopCode)
 			}
+			if soeRemoteService.URL != "" {
+				span.SetTag("serviceUrl", soeRemoteService.URL)
+			}
 			injectErr := tracer.(opentracing.Tracer).Inject(span.Context(), opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(req.Header))
 			if injectErr != nil {
 				span.Finish()
@@ -240,31 +307,31 @@ func (soeRemoteService *SoeRemoteService) checkTracer(req *http.Request, operati
 	return nil, false
 }
 
-func (soeRemoteService *SoeRemoteService) hyDo(client *http.Client, req *http.Request, operationName string) (result []byte, err error) {
-	hystrix.Do(operationName, func() error {
-		var respond *http.Response
-		respond, err = client.Do(req)
-		if err != nil {
-			return err
-		}
-		result, err = ioutil.ReadAll(respond.Body)
-		if err != nil {
-			return err
-		}
-		defer respond.Body.Close()
-		return err
-	}, func(err error) error {
-		if alarm.SendErrorToWx {
-			if alarm.ChatID != "" && alarm.ApiPath != "" {
-				content := fmt.Sprintf("GET 请求发生熔断错误！ URL:%s TenantID:%s", soeRemoteService.URL, soeRemoteService.TenantID)
-				go utils.SendMsgToWorkWx(alarm.ChatID, content, alarm.ApiPath, utils.WorkWxRestTokenStr)
-			}
-		}
-		err = errors.New("fallback")
-		return err
-	})
-	return result, err
-}
+// func (soeRemoteService *SoeRemoteService) hyDo(client *http.Client, req *http.Request, operationName string) (result []byte, err error) {
+// 	hystrix.Do(operationName, func() error {
+// 		var respond *http.Response
+// 		respond, err = client.Do(req)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		result, err = ioutil.ReadAll(respond.Body)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		defer respond.Body.Close()
+// 		return err
+// 	}, func(err error) error {
+// 		if alarm.SendErrorToWx {
+// 			if alarm.ChatID != "" && alarm.ApiPath != "" {
+// 				content := fmt.Sprintf("GET 请求发生熔断错误！ URL:%s TenantID:%s", soeRemoteService.URL, soeRemoteService.TenantID)
+// 				go utils.SendMsgToWorkWx(alarm.ChatID, content, alarm.ApiPath, utils.WorkWxRestTokenStr)
+// 			}
+// 		}
+// 		err = errors.New("fallback")
+// 		return err
+// 	})
+// 	return result, err
+// }
 
 //错误解析
 func (soeRemoteService *SoeRemoteService) handleError(resp *http.Response) (err error) {
