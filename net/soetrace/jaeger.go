@@ -66,7 +66,7 @@ func NewJaegerTracer(jtconfig JaegerTracerConfig) bool {
 	return false
 }
 
-func closeTracer() {
+func CloseTracer() {
 	if serverTracer.Enable {
 		serverTracer.Closer.Close()
 	}
