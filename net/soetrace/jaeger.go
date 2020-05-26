@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	infoLog "log"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -27,21 +28,60 @@ type tracerConfig struct {
 	LogSpans    bool
 	Endpoint    string               //jaeger host url
 	Sampler     config.SamplerConfig //采样参数配置
+	InitSpans   []string
 }
+
+type spanTracer struct {
+	Tracer opentracing.Tracer //服务名称
+	Closer io.Closer
+	Enable bool //初始化状态
+}
+
+var serverTracer = spanTracer{Enable: false}
+
+//默认的四种 DBTracer
+var dbMongoTracer = spanTracer{Enable: false}
+var dbMssqlTracer = spanTracer{Enable: false}
+var dbPgTracer = spanTracer{Enable: false}
+var dbRedisTracer = spanTracer{Enable: false}
+
+const (
+	spanDBMongo = "mongo"
+	spanDBMSSQL = "mssql"
+	spanDBPG    = "postgres"
+	spanDBREDIS = "redis"
+)
 
 type MDReaderWriter struct {
 	metadata.MD
 }
 
-func NewJaegerTracer(jtconfig JaegerTracerConfig) (opentracing.Tracer, io.Closer) {
-	tracer, closer := initJaegerTracer(jtconfig.Config.ServiceName, jtconfig)
+func NewJaegerTracer(jtconfig JaegerTracerConfig) bool {
+	if jtconfig.JaegerOpen {
+		serverTracer.Tracer, serverTracer.Closer = initJaegerTracer(jtconfig.Config.ServiceName, jtconfig)
+		opentracing.SetGlobalTracer(serverTracer.Tracer)
+		initSpanTracer(jtconfig)
+		return true
+	}
+	return false
+}
 
-	opentracing.SetGlobalTracer(tracer)
-
-	initMongoJaegerTracer(jtconfig)
-
-	initDBJaegerTracer(jtconfig)
-	return tracer, closer
+func closeTracer() {
+	if serverTracer.Enable {
+		serverTracer.Closer.Close()
+	}
+	if dbMongoTracer.Enable {
+		dbMongoTracer.Closer.Close()
+	}
+	if dbMssqlTracer.Enable {
+		dbMssqlTracer.Closer.Close()
+	}
+	if dbPgTracer.Enable {
+		dbPgTracer.Closer.Close()
+	}
+	if dbRedisTracer.Enable {
+		dbRedisTracer.Closer.Close()
+	}
 }
 
 func initJaegerTracer(serviceName string, jtconfig JaegerTracerConfig) (opentracing.Tracer, io.Closer) {
@@ -67,18 +107,30 @@ func initJaegerTracer(serviceName string, jtconfig JaegerTracerConfig) (opentrac
 	return tracer, closer
 }
 
-var mongoTracer opentracing.Tracer
-
-//GetTimeTaskIns 单例话任务服务
-func initMongoJaegerTracer(jtconfig JaegerTracerConfig) {
-	mongoTracer, _ = initJaegerTracer("mongo", jtconfig)
-}
-
-var dbTracer opentracing.Tracer
-
-//GetTimeTaskIns 单例话任务服务
-func initDBJaegerTracer(jtconfig JaegerTracerConfig) {
-	dbTracer, _ = initJaegerTracer("mssql", jtconfig)
+func initSpanTracer(jtconfig JaegerTracerConfig) {
+	initSpans := ""
+	for i := 0; i < len(jtconfig.Config.InitSpans); i++ {
+		if jtconfig.Config.InitSpans[i] == spanDBMongo && !dbMongoTracer.Enable {
+			dbMongoTracer.Tracer, dbMongoTracer.Closer = initJaegerTracer(spanDBMongo, jtconfig)
+			dbMongoTracer.Enable = true
+			initSpans = initSpans + spanDBMongo + " "
+		} else if jtconfig.Config.InitSpans[i] == spanDBMSSQL && !dbMssqlTracer.Enable {
+			dbMssqlTracer.Tracer, dbMssqlTracer.Closer = initJaegerTracer(spanDBMSSQL, jtconfig)
+			dbMssqlTracer.Enable = true
+			initSpans = initSpans + spanDBMSSQL + " "
+		} else if jtconfig.Config.InitSpans[i] == spanDBPG && !dbPgTracer.Enable {
+			dbPgTracer.Tracer, dbPgTracer.Closer = initJaegerTracer(spanDBPG, jtconfig)
+			dbPgTracer.Enable = true
+			initSpans = initSpans + spanDBPG + " "
+		} else if jtconfig.Config.InitSpans[i] == spanDBREDIS && !dbRedisTracer.Enable {
+			dbRedisTracer.Tracer, dbRedisTracer.Closer = initJaegerTracer(spanDBREDIS, jtconfig)
+			dbRedisTracer.Enable = true
+			initSpans = initSpans + spanDBREDIS + " "
+		}
+	}
+	if initSpans != "" {
+		infoLog.Println(fmt.Sprintf("%s Tracer 已经初始化", initSpans))
+	}
 }
 
 //GetNewSpanFromContext 获取新的Span用来记录
@@ -143,38 +195,70 @@ func GetNewSpanFromContextWithParent(c *gin.Context, operationName string, trace
 }
 
 //GetNewMongoSpan 获取新的Span用来记录
-func GetNewMongoSpan(c *gin.Context, operationName string, args ...string) (opentracing.Span, bool) {
-	if span, isOk := GetNewSpanFromContextWithParent(c, operationName, mongoTracer); isOk {
-		span.SetTag("db.Type", "mongo")
-		if len(args) >= 1 {
-			span.SetTag("db.DBName", args[0])
+func GetDBMongoSpan(c *gin.Context, operationName string, args ...string) (opentracing.Span, bool) {
+	if dbMongoTracer.Enable {
+		if span, isOk := GetNewSpanFromContextWithParent(c, operationName, dbMongoTracer.Tracer); isOk {
+			span.SetTag("db.Type", spanDBMongo)
+			if len(args) >= 1 {
+				span.SetTag("db.DBName", args[0])
+			}
+			if len(args) >= 2 {
+				span.SetTag("db.CollName", args[1])
+			}
+			if len(args) >= 3 {
+				span.SetTag("db.Cmd", args[2])
+			}
+			return span, true
 		}
-		if len(args) >= 2 {
-			span.SetTag("db.CollName", args[1])
-		}
-		if len(args) >= 3 {
-			span.SetTag("db.Cmd", args[2])
-		}
-
-		return span, true
 	}
-
 	return nil, false
 }
 
-//GetDBSpan 获取新的Span用来记录
-func GetDBSpan(c *gin.Context, operationName string, g *gorm.DB, args ...string) (opentracing.Span, bool) {
-	if span, isOk := GetNewSpanFromContextWithParent(c, operationName, dbTracer); isOk {
-		span.SetTag("db.Type", "mssql")
-		span.SetTag("db.DBName", g.Dialect().CurrentDatabase())
-
-		if len(args) >= 1 {
-			span.SetTag("db.Cmd", args[2])
+//GetDBMSQLSpan 获取新的Span用来记录  参数1 dbname  参数2 cmd
+func GetDBMSQLSpan(c *gin.Context, operationName string, args ...string) (opentracing.Span, bool) {
+	if dbMssqlTracer.Enable {
+		if span, isOk := GetNewSpanFromContextWithParent(c, operationName, dbMssqlTracer.Tracer); isOk {
+			span.SetTag("db.Type", spanDBMSSQL)
+			if len(args) >= 1 {
+				span.SetTag("db.DBName", args[0])
+			}
+			if len(args) >= 2 {
+				span.SetTag("db.Cmd", args[1])
+			}
+			return span, true
 		}
-
-		return span, true
 	}
+	return nil, false
+}
 
+//GetDBMSQLSpan 获取新的Span用来记录
+func GetDBPGSpan(c *gin.Context, operationName string, g *gorm.DB, args ...string) (opentracing.Span, bool) {
+	if dbPgTracer.Enable {
+		if span, isOk := GetNewSpanFromContextWithParent(c, operationName, dbPgTracer.Tracer); isOk {
+			span.SetTag("db.Type", spanDBPG)
+			if len(args) >= 1 {
+				span.SetTag("db.DBName", args[0])
+			}
+			if len(args) >= 2 {
+				span.SetTag("db.Cmd", args[1])
+			}
+			return span, true
+		}
+	}
+	return nil, false
+}
+
+//GetDBMSQLSpan 获取新的Span用来记录
+func GetDBRedisSpan(c *gin.Context, operationName string, args ...string) (opentracing.Span, bool) {
+	if dbRedisTracer.Enable {
+		if span, isOk := GetNewSpanFromContextWithParent(c, operationName, dbRedisTracer.Tracer); isOk {
+			span.SetTag("db.Type", spanDBREDIS)
+			if len(args) >= 1 {
+				span.SetTag("db.Key", args[0])
+			}
+			return span, true
+		}
+	}
 	return nil, false
 }
 

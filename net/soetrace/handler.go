@@ -10,8 +10,8 @@ func SetUpUseJaeger(config JaegerTracerConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if config.JaegerOpen {
 			var parentSpan opentracing.Span
-			// tracer, closer := NewJaegerTracer(config)
-			// defer closer.Close()
+
+			//检测头上是否带上 content
 			spCtx, err := opentracing.GlobalTracer().Extract(opentracing.HTTPHeaders, opentracing.HTTPHeadersCarrier(c.Request.Header))
 			if err != nil {
 				parentSpan = opentracing.StartSpan(c.Request.URL.Path)
