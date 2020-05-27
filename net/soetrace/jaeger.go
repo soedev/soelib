@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jinzhu/gorm"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/opentracing/opentracing-go/log"
@@ -223,7 +222,10 @@ func GetDBMSQLSpan(c *gin.Context, operationName string, args ...string) (opentr
 				span.SetTag("db.DBName", args[0])
 			}
 			if len(args) >= 2 {
-				span.SetTag("db.Cmd", args[1])
+				span.SetTag("db.Table", args[1])
+			}
+			if len(args) >= 3 {
+				span.SetTag("db.Cmd", args[2])
 			}
 			return span, true
 		}
@@ -232,7 +234,7 @@ func GetDBMSQLSpan(c *gin.Context, operationName string, args ...string) (opentr
 }
 
 //GetDBMSQLSpan 获取新的Span用来记录
-func GetDBPGSpan(c *gin.Context, operationName string, g *gorm.DB, args ...string) (opentracing.Span, bool) {
+func GetDBPGSpan(c *gin.Context, operationName string, args ...string) (opentracing.Span, bool) {
 	if dbPgTracer.Enable {
 		if span, isOk := GetNewSpanFromContextWithParent(c, operationName, dbPgTracer.Tracer); isOk {
 			span.SetTag("db.Type", spanDBPG)
@@ -240,7 +242,10 @@ func GetDBPGSpan(c *gin.Context, operationName string, g *gorm.DB, args ...strin
 				span.SetTag("db.DBName", args[0])
 			}
 			if len(args) >= 2 {
-				span.SetTag("db.Cmd", args[1])
+				span.SetTag("db.Table", args[1])
+			}
+			if len(args) >= 3 {
+				span.SetTag("db.Cmd", args[2])
 			}
 			return span, true
 		}
