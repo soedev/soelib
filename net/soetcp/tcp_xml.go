@@ -93,6 +93,7 @@ type DirectiveContent struct {
 //服务通讯类
 type SoeServiceData struct {
 	XMLName        xml.Name `xml:"SoeServiceData,omitempty"`
+	PrintID string `xml:"PrintId" json:"printId"`
 	Command        int      `xml:"Command" json:"command"`               //命令类型
 	Content        string   `xml:"Content" json:"content"`               //发送内容
 	Source         int      `xml:"Source" json:"source"`                 //来源
