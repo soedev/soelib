@@ -6,6 +6,7 @@ package specialdb
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/gomodule/redigo/redis"
 	"time"
 )
@@ -138,4 +139,50 @@ func (s *RedisTemplate) LikeDeletes(key string) error {
 		}
 	}
 	return nil
+}
+
+//Lock 加锁
+func (s *RedisTemplate) Lock(lock, value string, expire int) (ok bool, err error) {
+	c := s.Pool.Get()
+	defer c.Close()
+	//设置锁key-value和过期时间
+	_, err = redis.String(c.Do("SET", lock, value, "EX", expire, "NX"))
+	if err != nil {
+		if err == redis.ErrNil {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+//Lock 解锁
+func (s *RedisTemplate) Unlock(key, value string) (err error) {
+	c := s.Pool.Get()
+	defer c.Close()
+	//获取锁value
+	setValue, err := redis.String(c.Do("GET", key))
+	if err != nil {
+		return
+	}
+	//判断锁是否属于该释放锁的线程
+	if setValue != value {
+		err = errors.New("非法用户，无法释放该锁")
+		return
+	}
+	//属于该用户，直接删除该key
+	_, err = c.Do("DEL", key)
+	return
+}
+
+//Incr 自增
+func (s *RedisTemplate) Incr(key string) (result int, err error) {
+	conn := s.Pool.Get()
+	defer conn.Close()
+
+	result, err = redis.Int(conn.Do("INCR", key))
+	if err != nil {
+		return result, err
+	}
+	return result, nil
 }
