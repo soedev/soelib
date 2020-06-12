@@ -8,11 +8,11 @@ package config
 
 import (
 	"encoding/json"
+	"github.com/soedev/soelib/common/auth2"
 	"github.com/soedev/soelib/common/db/specialdb"
 	"github.com/soedev/soelib/common/des"
 	"github.com/soedev/soelib/common/soelog"
 	"github.com/soedev/soelib/net/emqtt"
-	"github.com/soedev/soelib/net/grpc/auth-token/client"
 	"github.com/soedev/soelib/net/soehttp"
 	"github.com/soedev/soelib/net/soetcp"
 	"github.com/soedev/soelib/net/soetrace"
@@ -28,7 +28,7 @@ type JsonConfig struct {
 	MQTT        emqttConfig      //MQTT通讯配置
 	ATT         attConfig        //中控考勤机 bs 模式处理配置信息
 	Caller      callerConfig     //来电显示盒配置
-	AuthToken   authTokenConfig  //authtoken 配置
+	AuthToken   auth2.AuthTokenConfig
 }
 
 //emqtt  服务端以及客户端配置
@@ -49,12 +49,6 @@ type attConfig struct {
 type callerConfig struct {
 	LineCount int  //来电路数
 	Enable    bool //是否开启来电显示
-}
-
-type authTokenConfig struct {
-	AccessType string            //来电路数
-	RestUrl    string            //是否开启来电显示
-	Grpc       client.GrpcConfig //
 }
 
 //JsonConfig 配置信息

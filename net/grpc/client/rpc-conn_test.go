@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	pb "github.com/soedev/soelib/net/grpc/auth-token/proto"
+	pb "github.com/soedev/soelib/net/grpc/proto"
 )
 
 func TestClient(t *testing.T) {
