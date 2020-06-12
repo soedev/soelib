@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package cn.soesoft.rpc;
+option java_package = "cn.soesoft.rpc";
+option java_outer_classname="AuthTokenProto";
+option java_multiple_files = true;
+option java_generic_services = true;
+option optimize_for = SPEED;
+
+service AuthTokenService {
+  //根据subject 信息 获取服务器颁发的 token
+  rpc AwardedToken(AwardResponse) returns (AwardReplyResponse){}
+
+  //根据平台token 来获取刷新token
+  rpc RefreshToken(AuthResponse) returns (ReplyResponse){}
+
+  //传递 token 到服务器进行验证
+  rpc AuthToken(AuthResponse) returns (ReplyResponse){}
+
+  //授权之后 返回鉴权model
+  rpc AuthTokenResultModel(AuthResponse) returns (ResultModelResponse){}
+
+  rpc Hello(Request) returns (Reply){}
+
+}
+
+message Request {
+  string name = 1;
+}
+
+message Reply {
+  string message = 1;
+}
+
+//颁发和鉴权返回值
+message ReplyResponse {
+  int64  code    = 1; //业务码
+  string message = 2; //消息
+  string data    = 3; //内容
+}
+
+//登录实体信息
+message SubjectInfo {
+  string userUid             = 1; //代表用户身份的唯一ID （有绑定微信 soeuserid）
+  string employeeId          = 2; //租户下雇员id信息
+  string tenantId            = 3; //租户ID
+  string tenantCode          = 4; //租户下门店ID
+  string holdShopCode        = 5; //当前登录门店ID
+  string offlineSystemUserId = 6; //当前登录人在业务系统中的 员工档案号
+  string offlineSystemShopId = 7; //当前登录店号的 门店短号 例如001
+}
+
+//颁发token请求信息
+message AwardResponse {
+   SubjectInfo sub = 1;
+   string platform = 2; //登录平台
+   string loginType = 3; //登录平台
+   string loginContent = 4; //登录平台
+   repeated string extend = 5; //扩展支持参数 string 数组类型 后期可以扩展使用
+}
+
+message AwardReplyResponse {
+  int64  code    = 1; //业务码
+  string message = 2; //消息
+  string refreshToken    = 4; //内容
+  string accessToken    = 5; //内容
+}
+
+//鉴权实体消息
+message AuthResponse {
+  string token = 1;
+}
+
+//登录信息
+message ResultModel {
+  string soeUserUid          = 1; //用户编号
+  string employeeId          = 2; //租户下雇员id信息
+  string tenantId            = 3; //租户ID
+  string tenantCode          = 4; //租户下门店ID
+  string shopCode            = 5; //当前登录门店ID
+  string shopId              = 6; //门店编号
+  string archivesId          = 7; //当前登录员工号  有雇员，有绑定才有
+  string loginType           = 8; //登录方式
+  string content             = 9; //登录内容备忘
+  string platform            = 10;//登录平台
+}
+
+message ResultModelResponse {
+  int64          code    = 1; //业务码
+  string         message = 2; //消息
+  string         data    = 3; //内容
+  ResultModel    model   = 4; //返回的 model信息
+}
+
