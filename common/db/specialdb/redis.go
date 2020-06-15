@@ -87,7 +87,11 @@ func (s *RedisTemplate) Set(key string, data interface{}, time int) error {
 	if err != nil {
 		return err
 	}
-	_, err = conn.Do("SET", key, value, "EX", time)
+	if time == -1 {
+		_, err = conn.Do("SET", key, value, "EX")
+	} else {
+		_, err = conn.Do("SET", key, value, "EX", time)
+	}
 	if err != nil {
 		return err
 	}
