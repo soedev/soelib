@@ -17,6 +17,7 @@ require (
 	github.com/getsentry/raven-go v0.2.0
 	github.com/gin-gonic/gin v1.5.0
 	github.com/go-ini/ini v1.54.0
+	github.com/golang/protobuf v1.4.1
 	github.com/gomodule/redigo v2.0.0+incompatible
 	github.com/google/uuid v1.1.1
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf
@@ -31,6 +32,7 @@ require (
 	go.uber.org/zap v1.14.0
 	golang.org/x/net v0.0.0-20200301022130-244492dfa37a
 	golang.org/x/text v0.3.2
-	google.golang.org/grpc v1.21.0
+	google.golang.org/grpc v1.27.0
+	google.golang.org/protobuf v1.24.0
 	gopkg.in/mgo.v2 v2.0.0-20190816093944-a6b53ec6cb22
 )

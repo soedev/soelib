@@ -8,6 +8,7 @@ package config
 
 import (
 	"encoding/json"
+	"github.com/soedev/soelib/common/auth2"
 	"github.com/soedev/soelib/common/db/specialdb"
 	"github.com/soedev/soelib/common/des"
 	"github.com/soedev/soelib/common/soelog"
@@ -27,6 +28,7 @@ type JsonConfig struct {
 	MQTT        emqttConfig      //MQTT通讯配置
 	ATT         attConfig        //中控考勤机 bs 模式处理配置信息
 	Caller      callerConfig     //来电显示盒配置
+	AuthToken   auth2.AuthTokenConfig
 }
 
 //emqtt  服务端以及客户端配置
@@ -139,5 +141,16 @@ func (s *JsonConfig) Check() {
 	//HTTP 默认值配置 告警
 	if s.HTTPConfig.Alarm.ApiPath == "" {
 		s.HTTPConfig.Alarm.ApiPath = "https://www.soesoft.org/workwx-rest/api/send-msg-to-chat"
+	}
+
+	//AuthToken 配置
+	if s.AuthToken.AccessType == "" {
+		s.AuthToken.AccessType = "grpc"
+	}
+	if s.AuthToken.Grpc.Port == "" {
+		s.AuthToken.Grpc.Port = "8090"
+	}
+	if s.AuthToken.Grpc.Host == "" {
+		s.AuthToken.Grpc.Host = "127.0.0.1"
 	}
 }
