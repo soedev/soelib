@@ -43,7 +43,7 @@ func GetSQLDb(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 	sqlDb.DB().SetMaxIdleConns(2)                  //最大空闲数
 	sqlDb.DB().SetMaxOpenConns(10)                 //最大连接数
 	sqlDb.DB().SetConnMaxLifetime(time.Minute * 5) //设置最大空闲时间，超过将关闭连接
-	sqlDb.LogMode(true)
+	sqlDb.LogMode(false)
 	return sqlDb, nil
 }
 

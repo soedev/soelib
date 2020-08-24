@@ -118,6 +118,23 @@ func (soeRemoteService *SoeRemoteService) Get(newReader io.Reader) ([]byte, erro
 	return soeRemoteService.do(req, "RemoteGET")
 }
 
+//NewPost 不加入熔断检测
+func (soeRemoteService *SoeRemoteService) NewPost(postBody *[]byte) ([]byte, error) {
+	req, err := http.NewRequest("POST", soeRemoteService.URL, bytes.NewReader(*postBody))
+	if err != nil {
+		return nil, err
+	}
+	return soeRemoteService.NewDo(req, "RemotePost")
+}
+
+//NewGet 不加入熔断检测
+func (soeRemoteService *SoeRemoteService) NewGet(newReader io.Reader) ([]byte, error) {
+	req, err := http.NewRequest("GET", soeRemoteService.URL, newReader)
+	if err != nil {
+		return nil, err
+	}
+	return soeRemoteService.NewDo(req, "RemoteGET")
+}
 func (soeRemoteService *SoeRemoteService) Delete(newReader io.Reader) ([]byte, error) {
 	req, err := http.NewRequest("DELETE", soeRemoteService.URL, newReader)
 	if err != nil {
@@ -275,6 +292,78 @@ func (soeRemoteService *SoeRemoteService) do(req *http.Request, operationName st
 	}
 }
 
+//NewDo 去除熔断检测
+func (soeRemoteService *SoeRemoteService) NewDo(req *http.Request, operationName string) (result []byte, err error) {
+	tr := &http.Transport{ //解决x509: certificate signed by unknown authority
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: tr, //解决x509: certificate signed by unknown authority
+	}
+	req.Header.Add("Content-Type", "application/json;charset=utf-8")
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	if soeRemoteService.Token != "" {
+		req.Header.Set("Authorization", soeRemoteService.Token)
+	}
+	if soeRemoteService.TenantID != "" {
+		req.Header.Set("tenantId", soeRemoteService.TenantID)
+	}
+	if soeRemoteService.ShopCode != "" {
+		req.Header.Set("shopCode", soeRemoteService.ShopCode)
+	}
+	var respond *http.Response
+	if span, isOk := soeRemoteService.checkTracer(req, soeRemoteService.URL); isOk {
+		defer span.Finish()
+		respond, err = client.Do(req)
+		if err != nil {
+			ext.Error.Set(span, true)
+			span.LogKV("error", err.Error())
+			return result, err
+		}
+
+		if !(respond.StatusCode >= 200 && respond.StatusCode <= 207) {
+			err = soeRemoteService.handleError(respond)
+			ext.Error.Set(span, true)
+			span.LogKV("error", err.Error())
+			return result, err
+		}
+		result, err = ioutil.ReadAll(respond.Body)
+		if err != nil {
+			ext.Error.Set(span, true)
+			span.LogKV("error", err.Error())
+			return result, err
+		}
+	} else {
+		respond, err = client.Do(req)
+		if err != nil {
+			return result, err
+		}
+
+		if !(respond.StatusCode >= 200 && respond.StatusCode <= 207) {
+			err = soeRemoteService.handleError(respond)
+			return result, err
+		}
+
+		result, err = ioutil.ReadAll(respond.Body)
+		if err != nil {
+			return result, err
+		}
+	}
+	defer respond.Body.Close()
+	return result, nil
+}
+
+/*
+//SendErrorToWx 发送错误日志到企业微信
+func (soeRemoteService *SoeRemoteService) SendErrorToWx() {
+	if alarm.SendErrorToWx {
+		if alarm.ChatID != "" && alarm.ApiPath != "" {
+			content := fmt.Sprintf(" 请求发生熔断错误！ URL:%s TenantID:%s", soeRemoteService.URL, soeRemoteService.TenantID)
+			go utils.SendMsgToWorkWx(alarm.ChatID, content, alarm.ApiPath, utils.WorkWxRestTokenStr)
+		}
+	}
+}*/
 //检测连接追踪
 func (soeRemoteService *SoeRemoteService) checkTracer(req *http.Request, operationName string) (opentracing.Span, bool) {
 	if soeRemoteService.Context != nil {
