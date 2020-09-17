@@ -35,11 +35,6 @@ func SetUpUseJaeger(config JaegerTracerConfig) gin.HandlerFunc {
 			if shopCode != "" {
 				parentSpan.SetTag("shopCode", shopCode)
 			}
-			var postBody interface{}
-			c.BindJSON(&postBody)
-			if postBody != nil {
-				parentSpan.SetTag("postBody", shopCode)
-			}
 		}
 		c.Next()
 	}
