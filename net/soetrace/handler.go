@@ -27,6 +27,14 @@ func SetUpUseJaeger(config JaegerTracerConfig) gin.HandlerFunc {
 			}
 			c.Set("Tracer", opentracing.GlobalTracer())
 			c.Set("ParentSpanContext", parentSpan.Context())
+			tenantID := c.Request.Header.Get("tenantId")
+			if tenantID != "" {
+				parentSpan.SetTag("tenantId", tenantID)
+			}
+			shopCode := c.Request.Header.Get("shopCode")
+			if shopCode != "" {
+				parentSpan.SetTag("shopCode", shopCode)
+			}
 		}
 		c.Next()
 	}
