@@ -21,6 +21,7 @@ type OptSQL struct {
 	MaxOpenConns    int
 	ConnMaxLifetime time.Duration
 	LogMode         bool
+	ApplicationName string
 }
 
 func (o *OptSQL) config() {
@@ -33,6 +34,9 @@ func (o *OptSQL) config() {
 	if o.MaxOpenConns == 0 {
 		o.ConnMaxLifetime = 10
 	}
+	if o.ApplicationName == "" {
+		o.ApplicationName = "go-service"
+	}
 }
 
 func GetSQLDb(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
@@ -41,6 +45,7 @@ func GetSQLDb(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 		MaxIdleConns:    2,
 		LogMode:         false,
 		ConnMaxLifetime: time.Minute * 5,
+		ApplicationName: "go-saas-service",
 	}
 	return GetSQLDbWithOpt(tenantID, crmdb, opt)
 }
@@ -67,6 +72,8 @@ func GetSQLDbWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL) (*gorm.DB, er
 	dbInfo := fmt.Sprintf("server=%s;user id=%s;password=%s;database=%s;port=%d;encrypt=disable", server, teantDataSource.UserName, password, dbName, port)
 	dialect := "mssql"
 	if teantDataSource.DriverClassname == "org.postgresql.ds.PGSimpleDataSource" {
+		dbInfo = fmt.Sprintf("host=%s user=%s port=%d dbname=%s sslmode=disable password=%s application_name=%s",
+			server, teantDataSource.UserName, port, dbName, password, opt.ApplicationName)
 		dialect = "postgres"
 	}
 	sqlDb, err := gorm.Open(dialect, dbInfo)
