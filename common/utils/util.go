@@ -258,22 +258,29 @@ func ParseInt(value interface{}) int {
 /*
 	从JDBC连接串中取得服务器和数据库名
 */
-func GetDBInfo(jdbcURL string) (string, string, int) {
-	//jdbcUrl := "jdbc:sqlserver://192.168.1.141:1433;databaseName=MERCURYDB"
+func GetDBInfo(jdbcURL string, driverClassName string) (string, string, int) {
+	//mssql jdbcUrl := "jdbc:sqlserver://192.168.1.141:1433;databaseName=MERCURYDB"
+	//pgsql jdbcUrl := "jdbc:postgresql://192.168.1.141:9999/MERCURYDB"
 	//替换jdbc。。。。为空
-	jdbcURL = strings.Replace(jdbcURL, "jdbc:sqlserver://", "", 1)
-	//fmt.Println(jdbcURL)
-	//192.168.1.141:1433;databaseName=MERCURYDB
-	a := strings.Index(jdbcURL, ";")
-	serverPort := jdbcURL[:a]
-	server := strings.Split(serverPort, ":")[0]
-	portStr := strings.Split(serverPort, ":")[1]
-	//fmt.Println("port:", portStr)
-	//fmt.Println("server:", server)
-	dbName := strings.Replace(jdbcURL[a:], ";databaseName=", "", 1)
-	//fmt.Println("name:", dbName)
-	port, _ := strconv.Atoi(portStr)
-	return dbName, server, port
+	if driverClassName == "org.postgresql.ds.PGSimpleDataSource" { //目前仅支持 pg 和 mssql连接
+		jdbcURL = strings.Replace(jdbcURL, "jdbc:postgresql://", "", 1)
+		a := strings.Index(jdbcURL, "/")
+		serverPort := jdbcURL[:a]
+		server := strings.Split(serverPort, ":")[0]
+		portStr := strings.Split(serverPort, ":")[1]
+		dbName := strings.Replace(jdbcURL[a:], "/", "", 1)
+		port, _ := strconv.Atoi(portStr)
+		return dbName, server, port
+	} else {
+		jdbcURL = strings.Replace(jdbcURL, "jdbc:sqlserver://", "", 1)
+		a := strings.Index(jdbcURL, ";")
+		serverPort := jdbcURL[:a]
+		server := strings.Split(serverPort, ":")[0]
+		portStr := strings.Split(serverPort, ":")[1]
+		dbName := strings.Replace(jdbcURL[a:], ";databaseName=", "", 1)
+		port, _ := strconv.Atoi(portStr)
+		return dbName, server, port
+	}
 }
 
 //CopyStruct 结构体复制(同一字段需要类型相同)

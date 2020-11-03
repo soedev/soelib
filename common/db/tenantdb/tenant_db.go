@@ -16,13 +16,42 @@ import (
 //dbMap 数据源缓存列表
 var dbMap sync.Map
 
+type OptSQL struct {
+	MaxIdleConns    int
+	MaxOpenConns    int
+	ConnMaxLifetime time.Duration
+	LogMode         bool
+}
+
+func (o *OptSQL) config() {
+	if o.ConnMaxLifetime == 0 {
+		o.ConnMaxLifetime = time.Minute * 5
+	}
+	if o.MaxIdleConns == 0 {
+		o.ConnMaxLifetime = 2
+	}
+	if o.MaxOpenConns == 0 {
+		o.ConnMaxLifetime = 10
+	}
+}
+
 func GetSQLDb(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
+	opt := &OptSQL{
+		MaxOpenConns:    10,
+		MaxIdleConns:    2,
+		LogMode:         false,
+		ConnMaxLifetime: time.Minute * 5,
+	}
+	return GetSQLDbWithOpt(tenantID, crmdb, opt)
+}
+
+func GetSQLDbWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL) (*gorm.DB, error) {
 	teantDS := TenantDataSource{Db: crmdb}
 	teantDataSource, err := teantDS.GetByTenantID(tenantID)
 	if err != nil {
 		return nil, err
 	}
-	dbName, server, port := utils.GetDBInfo(teantDataSource.URL)
+	dbName, server, port := utils.GetDBInfo(teantDataSource.URL, teantDataSource.DriverClassname)
 	if dbName == "" {
 		return nil, errors.New("数据源设置错误，数据库名为空！")
 	}
@@ -36,14 +65,19 @@ func GetSQLDb(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 		return nil, errors.New("数据源设置错误，密码为空！")
 	}
 	dbInfo := fmt.Sprintf("server=%s;user id=%s;password=%s;database=%s;port=%d;encrypt=disable", server, teantDataSource.UserName, password, dbName, port)
-	sqlDb, err := gorm.Open("mssql", dbInfo)
+	dialect := "mssql"
+	if teantDataSource.DriverClassname == "org.postgresql.ds.PGSimpleDataSource" {
+		dialect = "postgres"
+	}
+	sqlDb, err := gorm.Open(dialect, dbInfo)
 	if err != nil {
 		return nil, err
 	}
-	sqlDb.DB().SetMaxIdleConns(2)                  //最大空闲数
-	sqlDb.DB().SetMaxOpenConns(10)                 //最大连接数
-	sqlDb.DB().SetConnMaxLifetime(time.Minute * 5) //设置最大空闲时间，超过将关闭连接
-	sqlDb.LogMode(false)
+	opt.config()
+	sqlDb.DB().SetMaxIdleConns(opt.MaxIdleConns)       //最大空闲数
+	sqlDb.DB().SetMaxOpenConns(opt.MaxOpenConns)       //最大连接数
+	sqlDb.DB().SetConnMaxLifetime(opt.ConnMaxLifetime) //设置最大空闲时间，超过将关闭连接
+	sqlDb.LogMode(opt.LogMode)
 	return sqlDb, nil
 }
 
