@@ -47,10 +47,10 @@ func GetSQLDb(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 		ConnMaxLifetime: time.Minute * 5,
 		ApplicationName: "go-saas-service",
 	}
-	return GetSQLDbWithOpt(tenantID, crmdb, opt)
+	return getSQLDbWithOpt(tenantID, crmdb, opt)
 }
 
-func GetSQLDbWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL) (*gorm.DB, error) {
+func getSQLDbWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL) (*gorm.DB, error) {
 	teantDS := TenantDataSource{Db: crmdb}
 	teantDataSource, err := teantDS.GetByTenantID(tenantID)
 	if err != nil {
@@ -101,6 +101,36 @@ func GetDbFromMap(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 			dbMap.Delete(tenantID)
 			log.Println("移除数据源：", tenantID)
 			newDb, err := GetSQLDb(tenantID, crmdb)
+			if err != nil {
+				return nil, err
+			}
+			dbMap.Store(tenantID, newDb)
+			log.Println(fmt.Sprintf("增加数据源：%s", tenantID))
+			return newDb, nil
+		}
+		return db, nil
+	}
+	newDb, err := GetSQLDb(tenantID, crmdb)
+	if err != nil {
+		return nil, err
+	}
+	dbMap.Store(tenantID, newDb)
+	log.Println("增加数据源：", tenantID)
+	return newDb, nil
+}
+
+func GetDbFromMapWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL) (*gorm.DB, error) {
+	key := "SQLDB_" + tenantID
+	keylock.GetKeyLockIns().Lock(key)
+	defer keylock.GetKeyLockIns().Unlock(key)
+	if sqldb, isOk := dbMap.Load(tenantID); isOk {
+		db := sqldb.(*gorm.DB)
+		//go senMsgToWx(tenantID, db.DB().Stats())
+		if err := db.DB().Ping(); err != nil {
+			db.Close()
+			dbMap.Delete(tenantID)
+			log.Println("移除数据源：", tenantID)
+			newDb, err := getSQLDbWithOpt(tenantID, crmdb, opt)
 			if err != nil {
 				return nil, err
 			}
