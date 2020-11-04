@@ -140,7 +140,7 @@ func GetDbFromMapWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL) (*gorm.DB
 		}
 		return db, nil
 	}
-	newDb, err := GetSQLDb(tenantID, crmdb)
+	newDb, err := getSQLDbWithOpt(tenantID, crmdb, opt)
 	if err != nil {
 		return nil, err
 	}
