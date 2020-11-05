@@ -39,7 +39,7 @@ func GetSQLDb(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 	opt := &OptSQL{
 		MaxOpenConns:    10,
 		MaxIdleConns:    2,
-		LogMode:         false,
+		LogMode:         true,
 		ConnMaxLifetime: time.Minute * 5,
 	}
 	return GetSQLDbWithOpt(tenantID, crmdb, opt)
