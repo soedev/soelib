@@ -3,21 +3,23 @@ package tenantdb
 import (
 	"errors"
 	"github.com/jinzhu/gorm"
+	"time"
 )
 
 type TenantDataSource struct {
-	Db              *gorm.DB `json:"-"`
-	AutoID          int      `gorm:"primary_key" json:"autoId"`
-	TenantID        int      `json:"tenantId"`
-	TenantCode      string   `json:"tenantCode"`
-	Version         int      `json:"version"`
-	Name            string   `json:"name"`
-	URL             string   `json:"url"`
-	UserName        string   `json:"-"` //敏感数据，不传到前端
-	Password        string   `json:"-"` //敏感数据，不传到前端
-	DriverClassname string   `json:"driverClassname"`
-	PoolSize        string   `json:"poolSize"`
-	ExpMinute       string   `json:"expMinute"`
+	Db              *gorm.DB      `json:"-"`
+	AutoID          int           `gorm:"primary_key" json:"autoId"`
+	TenantID        int           `json:"tenantId"`
+	TenantCode      string        `json:"tenantCode"`
+	Version         int           `json:"version"`
+	Name            string        `json:"name"`
+	URL             string        `json:"url"`
+	UserName        string        `json:"-"` //敏感数据，不传到前端
+	Password        string        `json:"-"` //敏感数据，不传到前端
+	DriverClassname string        `json:"driverClassname"`
+	PoolSize        int           `json:"poolSize"` //空闲
+	MaxPoolSize     int           `json:"maxPoolSize"`
+	ExpMinute       time.Duration `json:"expMinute"`
 }
 
 //TableName 设置表名

@@ -17,23 +17,11 @@ import (
 var dbMap sync.Map
 
 type OptSQL struct {
-	MaxIdleConns    int
-	MaxOpenConns    int
-	ConnMaxLifetime time.Duration
 	LogMode         bool
 	ApplicationName string
 }
 
 func (o *OptSQL) config() {
-	if o.ConnMaxLifetime == 0 {
-		o.ConnMaxLifetime = time.Minute * 5
-	}
-	if o.MaxIdleConns == 0 {
-		o.ConnMaxLifetime = 2
-	}
-	if o.MaxOpenConns == 0 {
-		o.ConnMaxLifetime = 10
-	}
 	if o.ApplicationName == "" {
 		o.ApplicationName = "go-service"
 	}
@@ -41,10 +29,7 @@ func (o *OptSQL) config() {
 
 func GetSQLDb(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 	opt := &OptSQL{
-		MaxOpenConns:    10,
-		MaxIdleConns:    2,
 		LogMode:         false,
-		ConnMaxLifetime: time.Minute * 5,
 		ApplicationName: "go-saas-service",
 	}
 	return getSQLDbWithOpt(tenantID, crmdb, opt)
@@ -81,9 +66,18 @@ func getSQLDbWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL) (*gorm.DB, er
 		return nil, err
 	}
 	opt.config()
-	sqlDb.DB().SetMaxIdleConns(opt.MaxIdleConns)       //最大空闲数
-	sqlDb.DB().SetMaxOpenConns(opt.MaxOpenConns)       //最大连接数
-	sqlDb.DB().SetConnMaxLifetime(opt.ConnMaxLifetime) //设置最大空闲时间，超过将关闭连接
+	if teantDataSource.MaxPoolSize == 0 {
+		teantDataSource.MaxPoolSize = 10
+	}
+	if teantDataSource.PoolSize == 0 {
+		teantDataSource.PoolSize = 2
+	}
+	if teantDataSource.ExpMinute == 0 {
+		teantDataSource.ExpMinute = 5
+	}
+	sqlDb.DB().SetMaxIdleConns(teantDataSource.PoolSize)                   //最大空闲数
+	sqlDb.DB().SetMaxOpenConns(teantDataSource.MaxPoolSize)                //最大连接数
+	sqlDb.DB().SetConnMaxLifetime(teantDataSource.ExpMinute * time.Minute) //设置最大空闲时间，超过将关闭连接
 	sqlDb.LogMode(opt.LogMode)
 	return sqlDb, nil
 }
