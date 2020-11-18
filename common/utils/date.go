@@ -216,26 +216,33 @@ func GetSecondDiffer(startTime, endTime string) int64 {
 func IsNearStartTime(t *time.Time, startTime *time.Time, endTime *time.Time) bool {
 	isNear := false
 
-	if t == nil {
-		return isNear
+	//当前时间在凌晨的到上班时间 计算:下班时间到0点的秒数+0点到当前时间的秒数
+	if "00:00:00" <= t.Format("15:04:05") && t.Format("15:04:05") < startTime.Format("15:04:05") {
+		//获取当前时间离开始时间秒数
+		startTimeSecond := GetSecondDiffer(time.Now().Format("15:04:05"), startTime.Format("15:04:05"))
+
+		var endTimeSecond int64
+		var zeroSecond int64
+		//跨天的上下班时间
+		if startTime.Format("15:04:05") > endTime.Format("15:04:05") {
+			endTimeSecond = GetSecondDiffer(time.Now().Format("15:04:05"), endTime.Format("15:04:05"))
+			zeroSecond = 0
+		} else {
+			//当前时间到0点时间秒数
+			endTimeSecond = GetSecondDiffer(time.Now().Format("15:04:05"), "00:00:00")
+			//结束时间到23：59：59点秒数
+			zeroSecond = GetSecondDiffer("23:59:59", endTime.Format("15:04:05"))
+		}
+		if startTimeSecond < endTimeSecond+zeroSecond {
+			isNear = true
+		}
+	} else {
+		startTimeSecond := GetSecondDiffer(time.Now().Format("15:04:05"), startTime.Format("15:04:05"))
+		endTimeSecond := GetSecondDiffer(time.Now().Format("15:04:05"), endTime.Format("15:04:05"))
+		if startTimeSecond < endTimeSecond {
+			isNear = true
+		}
 	}
-
-	searchTime := t.Format("15:04:05")
-
-	startPeriodtTime := ""
-	if startTime != nil {
-		startPeriodtTime = startTime.Format("15:04:05")
-	}
-	endPeriodTime := ""
-	if endTime != nil {
-		endPeriodTime = endTime.Format("15:04:05")
-	}
-
-	if GetSecondDiffer(searchTime, startPeriodtTime) < GetSecondDiffer(searchTime, endPeriodTime) {
-		isNear = true
-	}
-
-
 	return isNear
 
 }
