@@ -17,35 +17,25 @@ import (
 var dbMap sync.Map
 
 type OptSQL struct {
-	MaxIdleConns    int
-	MaxOpenConns    int
-	ConnMaxLifetime time.Duration
 	LogMode         bool
+	ApplicationName string
 }
 
 func (o *OptSQL) config() {
-	if o.ConnMaxLifetime == 0 {
-		o.ConnMaxLifetime = time.Minute * 5
-	}
-	if o.MaxIdleConns == 0 {
-		o.ConnMaxLifetime = 2
-	}
-	if o.MaxOpenConns == 0 {
-		o.ConnMaxLifetime = 10
+	if o.ApplicationName == "" {
+		o.ApplicationName = "go-service"
 	}
 }
 
 func GetSQLDb(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 	opt := &OptSQL{
-		MaxOpenConns:    10,
-		MaxIdleConns:    2,
-		LogMode:         true,
-		ConnMaxLifetime: time.Minute * 5,
+		LogMode:         false,
+		ApplicationName: "go-saas-service",
 	}
-	return GetSQLDbWithOpt(tenantID, crmdb, opt)
+	return getSQLDbWithOpt(tenantID, crmdb, opt)
 }
 
-func GetSQLDbWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL) (*gorm.DB, error) {
+func getSQLDbWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL) (*gorm.DB, error) {
 	teantDS := TenantDataSource{Db: crmdb}
 	teantDataSource, err := teantDS.GetByTenantID(tenantID)
 	if err != nil {
@@ -67,6 +57,8 @@ func GetSQLDbWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL) (*gorm.DB, er
 	dbInfo := fmt.Sprintf("server=%s;user id=%s;password=%s;database=%s;port=%d;encrypt=disable", server, teantDataSource.UserName, password, dbName, port)
 	dialect := "mssql"
 	if teantDataSource.DriverClassname == "org.postgresql.ds.PGSimpleDataSource" {
+		dbInfo = fmt.Sprintf("host=%s user=%s port=%d dbname=%s sslmode=disable password=%s application_name=%s",
+			server, teantDataSource.UserName, port, dbName, password, opt.ApplicationName)
 		dialect = "postgres"
 	}
 	sqlDb, err := gorm.Open(dialect, dbInfo)
@@ -74,9 +66,18 @@ func GetSQLDbWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL) (*gorm.DB, er
 		return nil, err
 	}
 	opt.config()
-	sqlDb.DB().SetMaxIdleConns(opt.MaxIdleConns)       //最大空闲数
-	sqlDb.DB().SetMaxOpenConns(opt.MaxOpenConns)       //最大连接数
-	sqlDb.DB().SetConnMaxLifetime(opt.ConnMaxLifetime) //设置最大空闲时间，超过将关闭连接
+	if teantDataSource.MaxPoolSize == 0 {
+		teantDataSource.MaxPoolSize = 10
+	}
+	if teantDataSource.PoolSize == 0 {
+		teantDataSource.PoolSize = 2
+	}
+	if teantDataSource.ExpMinute == 0 {
+		teantDataSource.ExpMinute = 5
+	}
+	sqlDb.DB().SetMaxIdleConns(teantDataSource.PoolSize)                   //最大空闲数
+	sqlDb.DB().SetMaxOpenConns(teantDataSource.MaxPoolSize)                //最大连接数
+	sqlDb.DB().SetConnMaxLifetime(teantDataSource.ExpMinute * time.Minute) //设置最大空闲时间，超过将关闭连接
 	sqlDb.LogMode(opt.LogMode)
 	return sqlDb, nil
 }
@@ -104,6 +105,36 @@ func GetDbFromMap(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 		return db, nil
 	}
 	newDb, err := GetSQLDb(tenantID, crmdb)
+	if err != nil {
+		return nil, err
+	}
+	dbMap.Store(tenantID, newDb)
+	log.Println("增加数据源：", tenantID)
+	return newDb, nil
+}
+
+func GetDbFromMapWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL) (*gorm.DB, error) {
+	key := "SQLDB_" + tenantID
+	keylock.GetKeyLockIns().Lock(key)
+	defer keylock.GetKeyLockIns().Unlock(key)
+	if sqldb, isOk := dbMap.Load(tenantID); isOk {
+		db := sqldb.(*gorm.DB)
+		//go senMsgToWx(tenantID, db.DB().Stats())
+		if err := db.DB().Ping(); err != nil {
+			db.Close()
+			dbMap.Delete(tenantID)
+			log.Println("移除数据源：", tenantID)
+			newDb, err := getSQLDbWithOpt(tenantID, crmdb, opt)
+			if err != nil {
+				return nil, err
+			}
+			dbMap.Store(tenantID, newDb)
+			log.Println(fmt.Sprintf("增加数据源：%s", tenantID))
+			return newDb, nil
+		}
+		return db, nil
+	}
+	newDb, err := getSQLDbWithOpt(tenantID, crmdb, opt)
 	if err != nil {
 		return nil, err
 	}
