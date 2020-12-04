@@ -19,17 +19,19 @@ func TestSlots(t *testing.T) {
 	ants.SubmitTask(func() {
 		dm.Run()
 	})
-	for i := 0; i < 1000000; i++ {
+	for i := 0; i < 100; i++ {
 		wg.Add(1)
-		s := rand.Intn(40) + 5
+		s := rand.Intn(2000) + 3600
 		task := strconv.Itoa(i)
-		_ = dm.AddTask(time.Now().Add(time.Second*time.Duration(s)), task, func(args ...interface{}) {
+		runTime := time.Now().Add(time.Second * time.Duration(s))
+		_ = dm.AddTask(runTime, task, func(args ...interface{}) {
 			//模拟延迟
+			fmt.Println("计划运行时间:" + args[0].(string) + ",当前时间:" + time.Now().Format("15:04:05"))
 			d := rand.Intn(15)
 			time.Sleep(time.Second * time.Duration(d))
 			//fmt.Println(fmt.Sprintf("%d 秒后 任务：%s 花费时间：%d s", s, task, d))
 			wg.Done()
-		}, []interface{}{1, 2, 3}, true)
+		}, []interface{}{runTime.Format("15:04:05")}, true)
 	}
 	wg.Wait()
 	fmt.Println("end")

@@ -22,19 +22,24 @@ type Task struct {
 	exec    TaskFunc
 	params  []interface{}
 }
-type Slots [3600]map[string]*Task
+type Slot struct {
+	sync.RWMutex
+	m [3600]map[string]*Task
+}
+
+//type Slots [3600]map[string]*Task
 
 //任务添加控制
-var lock sync.Mutex
+//var lock sync.Mutex
 
 func (as *ArchetypeSlots) taskLoop() {
-	lock.Lock()
-	defer lock.Unlock()
+	as.slots.Lock()
+	defer as.slots.Unlock()
 	curIndex := as.curIndex
 	//开启异步: 防止跳帧抖动 保重精确执行任务的关键
 	ants.SubmitTask(func() {
 		//异步下：单个map 任务25000 异常率0%
-		tasks := as.slots[curIndex]
+		tasks := as.slots.m[curIndex]
 		if len(tasks) > 0 {
 			//fmt.Println(fmt.Sprintf("卡槽：%d 执行前任务数量：%d", curIndex, len(tasks)))
 			//遍历任务，判断任务循环次数等于0，则运行任务
@@ -46,7 +51,8 @@ func (as *ArchetypeSlots) taskLoop() {
 					go v.exec(v.params...)
 					delete(tasks, k)
 					if v.unique {
-						delete(as.globAllKeys, k)
+						as.globAllKeys.Delete(k)
+						//delete(as.globAllKeys, k)
 					}
 				} else {
 					v.turnNum--
@@ -55,36 +61,39 @@ func (as *ArchetypeSlots) taskLoop() {
 			//fmt.Println(fmt.Sprintf("卡槽：%d 执行后任务数量：%d", curIndex, len(tasks)))
 		}
 		//else {
-		//	if curIndex == 50 {
-		//		as.curIndex = 0
-		//	}
 		//	fmt.Println(fmt.Sprintf("卡槽：%d 已经没有任务", curIndex))
 		//}
 	})
 }
 
 func (as *ArchetypeSlots) AddTask(t time.Time, key string, exec TaskFunc, params []interface{}, unique bool) error {
-	lock.Lock()
-	defer lock.Unlock()
-	if as.firstRunTime.After(t) { //任务执行不能小于任务运行时间
+	as.slots.Lock()
+	defer as.slots.Unlock()
+	//if as.firstRunTime.After(t) { //任务执行不能小于任务运行时间
+	//	return errors.New("时间错误")
+	//}
+	t, _ = time.Parse("2006-01-02 15:04:05", t.Format("2006-01-02 15:04:05"))
+	if as.Now.After(t) || as.Now.Equal(t) { //任务执行不能小于等于任务运行时间
 		return errors.New("时间错误")
 	}
-	//当前时间与指定时间相差秒数
-	subSecond := t.Unix() - as.firstRunTime.Unix()
+	//当前时间与指定时间相差秒数,减1秒否则圈数可能会多一圈
+	subSecond := t.Unix() - as.Now.Unix() - 1
 	//计算圈数：圈数不能加1 取整即可
 	turnNum := int(subSecond / 3600)
 	//任务在插槽中的索引
-	ix := subSecond % 3600
+	subSeconds := t.Unix() - as.checkTime.Unix()
+	ix := subSeconds % 3600
 	//加入相应的任务
-	tasks := as.slots[ix]
+	tasks := as.slots.m[ix]
 	if _, ok := tasks[key]; ok {
 		return errors.New("该slots中已存在key为" + key + "的任务")
 	}
 	if unique {
-		if _, ok := as.globAllKeys[key]; ok {
+		if _, ok := as.globAllKeys.Load(key); ok {
 			return errors.New("此任务" + key + "不能重复加入")
 		}
-		as.globAllKeys[key] = key
+		as.globAllKeys.Store(key, key)
+		//as.globAllKeys[key] = key
 	}
 	tasks[key] = &Task{
 		turnNum: turnNum,

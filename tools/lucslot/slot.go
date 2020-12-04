@@ -11,31 +11,37 @@ package lucslot
 */
 import (
 	"fmt"
+	"sync"
 	"time"
 )
 
 //圆形插槽实体
 type ArchetypeSlots struct {
 	//环形插槽共3600个，每个插槽可放N个待执行任务
-	slots Slots
+	slots Slot
 	//当前插槽
-	curIndex     int
-	stop         chan bool
-	globAllKeys  map[string]string
-	firstRunTime time.Time
+	curIndex    int
+	stop        chan bool
+	globAllKeys sync.Map
+	checkTime   time.Time // 校准时间
+	Now         time.Time // 槽对应的时间
+	//firstRunTime time.Time
 }
 
 func newSlots() *ArchetypeSlots {
 	as := &ArchetypeSlots{
-		curIndex:     0,
-		stop:         make(chan bool),
-		firstRunTime: time.Now(),
+		curIndex: 0,
+		stop:     make(chan bool),
 	}
 	//初始化每个插槽： 任务用map存放【每个任务名称不能相同，防止任务被重复执行】
 	for i := 0; i < 3600; i++ {
-		as.slots[i] = make(map[string]*Task)
+		as.slots.m[i] = make(map[string]*Task)
 	}
-	as.globAllKeys = make(map[string]string)
+	// 去掉时区的影响
+	as.Now, _ = time.Parse("2006-01-02 15:04:05", time.Now().Format("2006-01-02 15:04:05"))
+	as.checkTime, _ = time.Parse("2006-01-02 15:04:05", time.Now().Format("2006-01-02 15")+":00:00")
+
+	//as.globAllKeys = make(map[string]string)
 	return as
 }
 
@@ -44,6 +50,11 @@ func (as *ArchetypeSlots) Run() {
 	defer func() {
 		fmt.Println("luc slots exit")
 	}()
+	now, _ := time.Parse("2006-01-02 15:04:05", time.Now().Format("2006-01-02 15:04:05"))
+	// 时间+1，否则索引会慢一秒
+	subSecond := now.Unix() - as.checkTime.Unix() + 1
+	as.curIndex = int(subSecond % 3600)
+	as.Now = now
 	tick := time.NewTicker(time.Second) //一秒执行一次
 	for {
 		select {
@@ -52,9 +63,11 @@ func (as *ArchetypeSlots) Run() {
 		case <-tick.C:
 			{
 				//wg.Add(1)
+				as.Now = as.Now.Add(time.Second)
 				as.taskLoop()
 				if as.curIndex == 3599 {
 					as.curIndex = 0
+					as.checkTime = as.checkTime.Add(time.Hour)
 				} else {
 					as.curIndex++
 				}
