@@ -18,6 +18,7 @@ type RedisConfig struct {
 	MaxIdle     int   //最大空闲连接数
 	MaxActive   int   //在给定时间内，允许分配的最大连接数（当为零时，没有限制）
 	IdleTimeout int64 //在给定时间内将会保持空闲状态，若到达时间限制则关闭连接（当为零时，没有限制）
+	Db          int   //设置redisDb
 }
 
 type RedisTemplate struct {
@@ -33,7 +34,8 @@ func ConnRedis(config RedisConfig) error {
 		MaxActive:   config.MaxActive,
 		IdleTimeout: time.Duration(config.IdleTimeout),
 		Dial: func() (redis.Conn, error) {
-			c, err := redis.Dial("tcp", config.Host)
+			db := redis.DialDatabase(config.Db)
+			c, err := redis.Dial("tcp", config.Host, db)
 			if err != nil {
 				return nil, err
 			}
