@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/mitchellh/mapstructure"
@@ -465,8 +466,11 @@ func (soeRemoteService *SoeRemoteService) handleError(resp *http.Response) (err 
 			if err != nil {
 				err = errors.New("服务器太忙了，请稍后再试！")
 			}
-			if soeGoResponseVO.Code == 500 {
+			if soeGoResponseVO.Code == 500 && reflect.TypeOf(soeGoResponseVO.Data).Kind() == reflect.String {
 				err = errors.New(soeGoResponseVO.Data.(string))
+			}
+			if err == nil {
+				err = errors.New("服务器太忙了，请稍后再试！")
 			}
 		}
 		return err
