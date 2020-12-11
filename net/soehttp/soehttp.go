@@ -40,6 +40,13 @@ type SoeRestAPIException struct {
 	Path      string `json:"path"`
 }
 
+//SoeGoResponseVO go返回数据
+type SoeGoResponseVO struct {
+	Code int         `json:"code"`
+	Data interface{} `json:"data"`
+	Msg  string      `json:"msg"`
+}
+
 //告警配置
 type AlarmConfig struct {
 	SendErrorToWx bool   //发送微信告警
@@ -452,6 +459,16 @@ func (soeRemoteService *SoeRemoteService) handleError(resp *http.Response) (err 
 			err = errors.New("服务器太忙了，请稍后再试！")
 		}
 		err = errors.New(soeRestAPIException.Message)
+		if soeRestAPIException.Message == "" {
+			soeGoResponseVO := SoeGoResponseVO{}
+			err = mapstructure.Decode(t, &soeGoResponseVO)
+			if err != nil {
+				err = errors.New("服务器太忙了，请稍后再试！")
+			}
+			if soeGoResponseVO.Code == 500 {
+				err = errors.New(soeGoResponseVO.Data.(string))
+			}
+		}
 		return err
 	}
 	err = errors.New("服务器太忙了，请稍后再试！")
