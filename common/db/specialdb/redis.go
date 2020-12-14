@@ -35,15 +35,10 @@ func ConnRedis(config RedisConfig) error {
 		IdleTimeout: time.Duration(config.IdleTimeout),
 		Dial: func() (redis.Conn, error) {
 			db := redis.DialDatabase(config.Db)
-			c, err := redis.Dial("tcp", config.Host, db)
+			dbPwd := redis.DialPassword(config.Password)
+			c, err := redis.Dial("tcp", config.Host, db, dbPwd)
 			if err != nil {
 				return nil, err
-			}
-			if config.Password != "" {
-				if _, err := c.Do("AUTH", config.Password); err != nil {
-					c.Close()
-					return nil, err
-				}
 			}
 			return c, err
 		},
