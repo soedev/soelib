@@ -21,6 +21,9 @@ var MongoSession *mgo.Session
 func ConnMongo(config MongoConfig) error {
 	//连接mongo
 	mongoDbInfo := fmt.Sprintf("mongodb://%s:%s@%s:%d", config.UserName, config.Password, config.Host, config.Port)
+	if config.Host != "192.168.1.88" {
+		mongoDbInfo = config.Host
+	}
 	session, err := mgo.Dial(mongoDbInfo)
 	if err != nil {
 		fmt.Println(err)
