@@ -13,6 +13,7 @@ type MongoConfig struct {
 	Password string
 	DbName   string
 	Db string
+	Suffix string
 }
 
 //MogSession 数据库连接
@@ -21,7 +22,7 @@ var MongoSession *mgo.Session
 //SetupMog 初始化数据库
 func ConnMongo(config MongoConfig) error {
 	//连接mongo
-	mongoDbInfo := fmt.Sprintf("mongodb://%s:%s@%s:%d/admin?replicaSet=mgset-40705661", config.UserName, config.Password, config.Host, config.Port)
+	mongoDbInfo := fmt.Sprintf("mongodb://%s:%s@%s:%d%s", config.UserName, config.Password, config.Host, config.Port,config.Suffix)
 	if config.Db!=""{
 		mongoDbInfo+=config.Db
 	}
