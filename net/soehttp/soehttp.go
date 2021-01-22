@@ -10,15 +10,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/mitchellh/mapstructure"
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
+	"github.com/soedev/soelib/common/soelog"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"reflect"
 	"time"
-
-	"github.com/mitchellh/mapstructure"
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
 
 	"github.com/afex/hystrix-go/hystrix"
 	"github.com/gin-gonic/gin"
@@ -39,6 +39,7 @@ type SoeRestAPIException struct {
 	Exception string `json:"exception"`
 	Message   string `json:"message"`
 	Path      string `json:"path"`
+	Data string `json:"data"`
 }
 
 //SoeGoResponseVO go返回数据
@@ -109,7 +110,7 @@ func RemoteWithContent(content *gin.Context, url string, args ...string) *SoeRem
 	return &soeRemoteService
 }
 
-func (soeRemoteService *SoeRemoteService) Post(postBody *[]byte) ([]byte, error) {
+func (soeRemoteService *SoeRemoteService) NewPost(postBody *[]byte) ([]byte, error) {
 	req, err := http.NewRequest("POST", soeRemoteService.URL, bytes.NewReader(*postBody))
 	if err != nil {
 		return nil, err
@@ -118,7 +119,7 @@ func (soeRemoteService *SoeRemoteService) Post(postBody *[]byte) ([]byte, error)
 }
 
 //get  get 请求
-func (soeRemoteService *SoeRemoteService) Get(newReader io.Reader) ([]byte, error) {
+func (soeRemoteService *SoeRemoteService) NewGet(newReader io.Reader) ([]byte, error) {
 	req, err := http.NewRequest("GET", soeRemoteService.URL, newReader)
 	if err != nil {
 		return nil, err
@@ -127,7 +128,7 @@ func (soeRemoteService *SoeRemoteService) Get(newReader io.Reader) ([]byte, erro
 }
 
 //NewPost 不加入熔断检测
-func (soeRemoteService *SoeRemoteService) NewPost(postBody *[]byte) ([]byte, error) {
+func (soeRemoteService *SoeRemoteService) Post(postBody *[]byte) ([]byte, error) {
 	req, err := http.NewRequest("POST", soeRemoteService.URL, bytes.NewReader(*postBody))
 	if err != nil {
 		return nil, err
@@ -136,7 +137,7 @@ func (soeRemoteService *SoeRemoteService) NewPost(postBody *[]byte) ([]byte, err
 }
 
 //NewGet 不加入熔断检测
-func (soeRemoteService *SoeRemoteService) NewGet(newReader io.Reader) ([]byte, error) {
+func (soeRemoteService *SoeRemoteService) Get(newReader io.Reader) ([]byte, error) {
 	req, err := http.NewRequest("GET", soeRemoteService.URL, newReader)
 	if err != nil {
 		return nil, err
@@ -287,6 +288,7 @@ func (soeRemoteService *SoeRemoteService) do(req *http.Request, operationName st
 			defer respond.Body.Close()
 			return err
 		}, func(err error) error {
+			soelog.Logger.Info(req.URL.Host+":"+req.URL.Path+"》》》》》》熔断降级："+err.Error())
 			if alarm.SendErrorToWx {
 				if alarm.ChatID != "" && alarm.ApiPath != "" {
 					content := fmt.Sprintf("GET 请求发生熔断错误！ URL:%s TenantID:%s", soeRemoteService.URL, soeRemoteService.TenantID)
@@ -456,6 +458,9 @@ func (soeRemoteService *SoeRemoteService) handleError(resp *http.Response) (err 
 	case map[string]interface{}:
 		soeRestAPIException := SoeRestAPIException{}
 		err = mapstructure.Decode(t, &soeRestAPIException)
+		if soeRestAPIException.Data!="" {
+			return errors.New(fmt.Sprintf("%v", soeRestAPIException.Data))
+		}
 		if err != nil {
 			err = errors.New("服务器太忙了，请稍后再试！")
 		}
