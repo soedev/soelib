@@ -11,6 +11,7 @@ import (
 	"github.com/soedev/soelib/common/auth2"
 	"github.com/soedev/soelib/common/db/specialdb"
 	"github.com/soedev/soelib/common/des"
+	"github.com/soedev/soelib/common/soesentry"
 	"github.com/soedev/soelib/common/soelog"
 	"github.com/soedev/soelib/net/emqtt"
 	"github.com/soedev/soelib/net/soehttp"
@@ -29,6 +30,7 @@ type JsonConfig struct {
 	ATT         attConfig        //中控考勤机 bs 模式处理配置信息
 	Caller      callerConfig     //来电显示盒配置
 	AuthToken   auth2.AuthTokenConfig
+	Sentry      soesentry.Sentry
 }
 
 //emqtt  服务端以及客户端配置
