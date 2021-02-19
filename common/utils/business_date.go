@@ -50,7 +50,7 @@ func GetShopBussinessDateTime(shopStartTime, shopEndTime, stringStartDate, strin
 		stringEndDate = theDate.Add(decDay).Format("2006-01-02")
 		endDateTime = stringEndDate + " " + shopEndTime
 	}
-	return startDateTime, endDateTime
+	return startDateTime, endDateTime + ".999"
 }
 
 //GetBussinessDateTime 获取营业时间
