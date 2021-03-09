@@ -11,6 +11,7 @@ require (
 	github.com/axgle/mahonia v0.0.0-20180208002826-3358181d7394
 	github.com/certifi/gocertifi v0.0.0-20200211180108-c7c1fbc02894 // indirect
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
+	github.com/denisenkom/go-mssqldb v0.0.0-20191124224453-732737034ffd
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/digitalocean/go-smbios v0.0.0-20180907143718-390a4f403a8e
 	github.com/eclipse/paho.mqtt.golang v1.2.0
@@ -22,7 +23,10 @@ require (
 	github.com/gomodule/redigo v2.0.0+incompatible
 	github.com/google/uuid v1.1.1
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf
+	github.com/jackc/pgx/v4 v4.10.1
 	github.com/jinzhu/gorm v1.9.12
+	github.com/jinzhu/inflection v1.0.0
+	github.com/jinzhu/now v1.0.1
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/openzipkin/zipkin-go v0.2.2
@@ -32,7 +36,7 @@ require (
 	github.com/ulule/deepcopier v0.0.0-20200117111125-792cfb847af8
 	go.uber.org/zap v1.14.0
 	golang.org/x/net v0.0.0-20200301022130-244492dfa37a
-	golang.org/x/text v0.3.2
+	golang.org/x/text v0.3.3
 	google.golang.org/grpc v1.27.0
 	google.golang.org/protobuf v1.24.0
 	gopkg.in/mgo.v2 v2.0.0-20190816093944-a6b53ec6cb22
