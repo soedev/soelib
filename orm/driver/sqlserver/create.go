@@ -42,32 +42,32 @@ func Create(db *gorm.DB) {
 		if hasConflict {
 			MergeCreate(db, onConflict, values)
 		} else {
-			setIdentityInsert := false
-
-			if db.Statement.Schema != nil {
-				if field := db.Statement.Schema.PrioritizedPrimaryField; field != nil && field.AutoIncrement {
-					switch db.Statement.ReflectValue.Kind() {
-					case reflect.Struct:
-						_, isZero := field.ValueOf(db.Statement.ReflectValue)
-						setIdentityInsert = !isZero
-					case reflect.Slice, reflect.Array:
-						for i := 0; i < db.Statement.ReflectValue.Len(); i++ {
-							obj := db.Statement.ReflectValue.Index(i)
-							if reflect.Indirect(obj).Kind() == reflect.Struct {
-								_, isZero := field.ValueOf(db.Statement.ReflectValue.Index(i))
-								setIdentityInsert = !isZero
-							}
-							break
-						}
-					}
-
-					if setIdentityInsert {
-						db.Statement.WriteString("SET IDENTITY_INSERT ")
-						db.Statement.WriteQuoted(db.Statement.Table)
-						db.Statement.WriteString(" ON;")
-					}
-				}
-			}
+			//setIdentityInsert := false
+			//
+			//if db.Statement.Schema != nil {
+			//	if field := db.Statement.Schema.PrioritizedPrimaryField; field != nil && field.AutoIncrement {
+			//		switch db.Statement.ReflectValue.Kind() {
+			//		case reflect.Struct:
+			//			_, isZero := field.ValueOf(db.Statement.ReflectValue)
+			//			setIdentityInsert = !isZero
+			//		case reflect.Slice, reflect.Array:
+			//			for i := 0; i < db.Statement.ReflectValue.Len(); i++ {
+			//				obj := db.Statement.ReflectValue.Index(i)
+			//				if reflect.Indirect(obj).Kind() == reflect.Struct {
+			//					_, isZero := field.ValueOf(db.Statement.ReflectValue.Index(i))
+			//					setIdentityInsert = !isZero
+			//				}
+			//				break
+			//			}
+			//		}
+			//
+			//		if setIdentityInsert {
+			//			db.Statement.WriteString("SET IDENTITY_INSERT ")
+			//			db.Statement.WriteQuoted(db.Statement.Table)
+			//			db.Statement.WriteString(" ON;")
+			//		}
+			//	}
+			//}
 
 			db.Statement.AddClauseIfNotExists(clause.Insert{})
 			db.Statement.Build("INSERT")
@@ -105,11 +105,11 @@ func Create(db *gorm.DB) {
 				}
 			}
 
-			if setIdentityInsert {
-				db.Statement.WriteString("SET IDENTITY_INSERT ")
-				db.Statement.WriteQuoted(db.Statement.Table)
-				db.Statement.WriteString(" OFF;")
-			}
+			//if setIdentityInsert {
+			//	db.Statement.WriteString("SET IDENTITY_INSERT ")
+			//	db.Statement.WriteQuoted(db.Statement.Table)
+			//	db.Statement.WriteString(" OFF;")
+			//}
 		}
 	}
 
