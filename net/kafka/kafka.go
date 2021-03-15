@@ -9,22 +9,16 @@ import (
 	"time"
 )
 
+var producer sarama.SyncProducer
+
 //SaramaProducer 生成生产者
-func SaramaProducer(config *sarama.Config, server string) (producer sarama.AsyncProducer, err error) {
+func SaramaProducer(config *sarama.Config, server string) (producer sarama.SyncProducer, err error) {
 	//使用配置,新建一个异步生产者
-	producer, err = sarama.NewAsyncProducer([]string{server}, config)
+	producer, err = sarama.NewSyncProducer([]string{server}, config)
 	if err != nil {
 		soelog.Logger.Info(err.Error())
 		return producer, err
 	}
-	defer producer.AsyncClose()
-	go func(p sarama.AsyncProducer) {
-		select {
-		case <-p.Successes():
-		case fail := <-p.Errors():
-			soelog.Logger.Info(fail.Err.Error())
-		}
-	}(producer)
 	return producer, nil
 }
 
@@ -92,22 +86,25 @@ func SaramaConsumer(server, group, topic string) (sarama.Client, sarama.OffsetMa
 
 //SendSarama 发送
 func SendSarama(server, topic string, value []byte) {
-	config := sarama.NewConfig()
-	//等待服务器所有副本都保存成功后的响应
-	config.Producer.RequiredAcks = sarama.WaitForAll
-	//随机向partition发送消息
-	config.Producer.Partitioner = sarama.NewRandomPartitioner
-	//是否等待成功和失败后的响应,只有上面的RequireAcks设置不是NoReponse这里才有用.
-	config.Producer.Return.Successes = true
-	config.Producer.Return.Errors = true
-	//设置使用的kafka版本,如果低于V0_10_0_0版本,消息中的timestrap没有作用.需要消费和生产同时配置
-	//注意，版本设置不对的话，kafka会返回很奇怪的错误，并且无法成功发送消息
-	config.Version = sarama.V2_0_0_0
+	var err error
+	if producer == nil {
+		config := sarama.NewConfig()
+		//等待服务器所有副本都保存成功后的响应
+		config.Producer.RequiredAcks = sarama.WaitForAll
+		//随机向partition发送消息
+		config.Producer.Partitioner = sarama.NewRandomPartitioner
+		//是否等待成功和失败后的响应,只有上面的RequireAcks设置不是NoReponse这里才有用.
+		config.Producer.Return.Successes = true
+		config.Producer.Return.Errors = true
+		//设置使用的kafka版本,如果低于V0_10_0_0版本,消息中的timestrap没有作用.需要消费和生产同时配置
+		//注意，版本设置不对的话，kafka会返回很奇怪的错误，并且无法成功发送消息
+		config.Version = sarama.V2_0_0_0
 
-	producer, err := SaramaProducer(config, server)
-	if err != nil {
-		soelog.Logger.Error("send sarama error:" + err.Error())
-		return
+		producer, err = SaramaProducer(config, server)
+		if err != nil {
+			soelog.Logger.Error("get producer error:" + err.Error())
+			return
+		}
 	}
 
 	msg := &sarama.ProducerMessage{
@@ -115,5 +112,8 @@ func SendSarama(server, topic string, value []byte) {
 		Value: sarama.ByteEncoder(value),
 	}
 	//使用通道发送
-	producer.Input() <- msg
+	_, _, err = producer.SendMessage(msg)
+	if err != nil {
+		soelog.Logger.Error("send kafka error:" + err.Error())
+	}
 }
