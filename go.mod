@@ -31,6 +31,7 @@ require (
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/openzipkin/zipkin-go v0.2.2
+	github.com/robfig/cron v1.2.0
 	github.com/spf13/viper v1.6.2
 	github.com/uber/jaeger-client-go v2.23.1+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
