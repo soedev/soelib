@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-type TenantDataSource struct {
-	Db              *gorm.DB      `json:"-"`
+type TenantDataSourceBack struct {
+	Db              *gorm.DB      `gorm:"-" json:"-"`
 	AutoID          int           `gorm:"primary_key" json:"autoId"`
 	TenantID        int           `json:"tenantId"`
 	TenantCode      string        `json:"tenantCode"`
@@ -20,22 +20,22 @@ type TenantDataSource struct {
 	PoolSize        int           `json:"poolSize"` //空闲
 	MaxPoolSize     int           `json:"maxPoolSize"`
 	ExpMinute       time.Duration `json:"expMinute"`
+	Enable          int           `json:"-"`
 }
 
-//TableName 设置表名
-func (TenantDataSource) TableName() string {
-	return "crm.tenant_datasource"
+func (TenantDataSourceBack) TableName() string {
+	return "crm.tenant_datasource_back"
 }
 
 //GetByTenantID 根据租户号取得第一条数据源
-func (t *TenantDataSource) GetByTenantID(tenantID string) (TenantDataSource, error) {
-	var tds []TenantDataSource
+func (t *TenantDataSourceBack) GetByTenantID(tenantID string) (*TenantDataSourceBack, error) {
+	var tds []TenantDataSourceBack
 	t.Db.Where("tenant_id = ?", tenantID).Find(&tds)
 	if len(tds) == 0 {
-		return TenantDataSource{}, errors.New("数据源未配置！")
+		return nil, nil
 	}
 	if len(tds) > 1 {
-		return TenantDataSource{}, errors.New("数据源中找到多个配置，请检查！")
+		return nil, errors.New("数据源中找到多个配置，请检查！")
 	}
-	return tds[0], nil
+	return &tds[0], nil
 }

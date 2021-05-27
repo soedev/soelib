@@ -11,8 +11,8 @@ import (
 	"github.com/soedev/soelib/common/auth2"
 	"github.com/soedev/soelib/common/db/specialdb"
 	"github.com/soedev/soelib/common/des"
-	"github.com/soedev/soelib/common/soesentry"
 	"github.com/soedev/soelib/common/soelog"
+	"github.com/soedev/soelib/common/soesentry"
 	"github.com/soedev/soelib/net/emqtt"
 	"github.com/soedev/soelib/net/soehttp"
 	"github.com/soedev/soelib/net/soetcp"
@@ -21,16 +21,18 @@ import (
 )
 
 type JsonConfig struct {
-	MongoConfig specialdb.MongoConfig //mogo 数据库连接配置
-	RedisConfig specialdb.RedisConfig //redis 连接配置
-	TraceConfig soetrace.JaegerTracerConfig
-	HTTPConfig  soehttp.SoeHTTPConfig
-	TCP         soetcp.TcpConfig //小索辅助配置
-	MQTT        emqttConfig      //MQTT通讯配置
-	ATT         attConfig        //中控考勤机 bs 模式处理配置信息
-	Caller      callerConfig     //来电显示盒配置
-	AuthToken   auth2.AuthTokenConfig
-	Sentry      soesentry.Sentry
+	MongoConfig   specialdb.MongoConfig //mogo 数据库连接配置
+	RedisConfig   specialdb.RedisConfig //redis 连接配置
+	TraceConfig   soetrace.JaegerTracerConfig
+	HTTPConfig    soehttp.SoeHTTPConfig
+	TCP           soetcp.TcpConfig //小索辅助配置
+	MQTT          emqttConfig      //MQTT通讯配置
+	ATT           attConfig        //中控考勤机 bs 模式处理配置信息
+	Caller        callerConfig     //来电显示盒配置
+	AuthToken     auth2.AuthTokenConfig
+	Sentry        soesentry.Sentry
+	Kafka         kafka
+	SlowInterface slowInterface
 }
 
 //emqtt  服务端以及客户端配置
@@ -51,6 +53,15 @@ type attConfig struct {
 type callerConfig struct {
 	LineCount int  //来电路数
 	Enable    bool //是否开启来电显示
+}
+
+type kafka struct {
+	Server string
+}
+
+type slowInterface struct {
+	SlowTime int
+	Tag      string
 }
 
 //JsonConfig 配置信息

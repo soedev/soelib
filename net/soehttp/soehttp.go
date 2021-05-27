@@ -39,7 +39,7 @@ type SoeRestAPIException struct {
 	Exception string `json:"exception"`
 	Message   string `json:"message"`
 	Path      string `json:"path"`
-	Data string `json:"data"`
+	Data      string `json:"data"`
 }
 
 //SoeGoResponseVO go返回数据
@@ -115,7 +115,7 @@ func (soeRemoteService *SoeRemoteService) NewPost(postBody *[]byte) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	return soeRemoteService.do(req, "RemotePost")
+	return soeRemoteService.NewDo(req, "RemotePost")
 }
 
 //get  get 请求
@@ -124,7 +124,7 @@ func (soeRemoteService *SoeRemoteService) NewGet(newReader io.Reader) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	return soeRemoteService.do(req, "RemoteGET")
+	return soeRemoteService.NewDo(req, "RemoteGET")
 }
 
 //NewPost 不加入熔断检测
@@ -288,7 +288,7 @@ func (soeRemoteService *SoeRemoteService) do(req *http.Request, operationName st
 			defer respond.Body.Close()
 			return err
 		}, func(err error) error {
-			soelog.Logger.Info(req.URL.Host+":"+req.URL.Path+"》》》》》》熔断降级："+err.Error())
+			soelog.Logger.Info(req.URL.Host + ":" + req.URL.Path + "》》》》》》熔断降级：" + err.Error())
 			if alarm.SendErrorToWx {
 				if alarm.ChatID != "" && alarm.ApiPath != "" {
 					content := fmt.Sprintf("GET 请求发生熔断错误！ URL:%s TenantID:%s", soeRemoteService.URL, soeRemoteService.TenantID)
@@ -458,7 +458,7 @@ func (soeRemoteService *SoeRemoteService) handleError(resp *http.Response) (err 
 	case map[string]interface{}:
 		soeRestAPIException := SoeRestAPIException{}
 		err = mapstructure.Decode(t, &soeRestAPIException)
-		if soeRestAPIException.Data!="" {
+		if soeRestAPIException.Data != "" {
 			return errors.New(fmt.Sprintf("%v", soeRestAPIException.Data))
 		}
 		if err != nil {
