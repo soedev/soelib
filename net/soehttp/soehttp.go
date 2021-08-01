@@ -305,7 +305,8 @@ func (soeRemoteService *SoeRemoteService) do(req *http.Request, operationName st
 //NewDo 去除熔断检测
 func (soeRemoteService *SoeRemoteService) NewDo(req *http.Request, operationName string) (result []byte, err error) {
 	tr := &http.Transport{ //解决x509: certificate signed by unknown authority
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+		MaxIdleConnsPerHost: 1000,
 	}
 	client := &http.Client{
 		Timeout:   15 * time.Second,
@@ -326,6 +327,9 @@ func (soeRemoteService *SoeRemoteService) NewDo(req *http.Request, operationName
 	if span, isOk := soeRemoteService.checkTracer(req, soeRemoteService.URL); isOk {
 		defer span.Finish()
 		respond, err = client.Do(req)
+		if respond != nil {
+			defer respond.Body.Close()
+		}
 		if err != nil {
 			ext.Error.Set(span, true)
 			span.LogKV("error", err.Error())
@@ -346,10 +350,13 @@ func (soeRemoteService *SoeRemoteService) NewDo(req *http.Request, operationName
 		}
 	} else {
 		respond, err = client.Do(req)
+		//重定向的错误时，respond将是 non-nil
+		if respond != nil {
+			defer respond.Body.Close()
+		}
 		if err != nil {
 			return result, err
 		}
-
 		if !(respond.StatusCode >= 200 && respond.StatusCode <= 207) {
 			err = soeRemoteService.handleError(respond)
 			return result, err
@@ -360,7 +367,6 @@ func (soeRemoteService *SoeRemoteService) NewDo(req *http.Request, operationName
 			return result, err
 		}
 	}
-	defer respond.Body.Close()
 	return result, nil
 }
 
