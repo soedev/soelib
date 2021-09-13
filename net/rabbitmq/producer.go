@@ -19,6 +19,7 @@ type Connection struct {
 	ChNotifyClose   chan *amqp.Error
 	URL             string
 	Rabbit          Rabbit
+	CloseProcess    chan bool
 }
 
 func dial(url string) (*amqp.Connection, error) {
@@ -30,6 +31,7 @@ func dial(url string) (*amqp.Connection, error) {
 }
 func (c *Connection) ReConnector() {
 	closeFlag := false
+closeTag:
 	for {
 		c.ConnNotifyClose = c.Conn.NotifyClose(make(chan *amqp.Error))
 		c.ChNotifyClose = c.Ch.NotifyClose(make(chan *amqp.Error))
@@ -49,7 +51,7 @@ func (c *Connection) ReConnector() {
 					close(c.ConnNotifyClose)
 				}
 				//ChNotifyClose 自动关闭
-				InitRabbitMQProducer(c)
+				go InitRabbitMQProducer(c)
 				closeFlag = true
 			} else {
 				ch, _ := conn.Channel()
@@ -76,13 +78,15 @@ func (c *Connection) ReConnector() {
 			for err := range c.ChNotifyClose {
 				println(err)
 			}
+		case <-c.CloseProcess:
+			break closeTag
 		}
 		//结束进程
 		if closeFlag {
-			soelog.Logger.Info("结束生产者进程")
 			break
 		}
 	}
+	soelog.Logger.Info("结束生产者进程")
 }
 
 //InitRabbitMQProducer 初始化生产者
@@ -106,7 +110,9 @@ func InitRabbitMQProducer(c *Connection) {
 	c.Conn = conn
 	c.URL = url
 	c.Ch = ch
-	go c.ReConnector()
+	c.CloseProcess = make(chan bool, 1)
+	c.ReConnector()
+	soelog.Logger.Info("结束rabbitMQ生产者")
 	return
 }
 
