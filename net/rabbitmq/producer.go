@@ -3,12 +3,14 @@ package rabbitmq
 import (
 	"fmt"
 	"github.com/soedev/soelib/common/soelog"
+	"github.com/spf13/cast"
 	"github.com/streadway/amqp"
 	"time"
 )
 
 type Rabbit struct {
 	Host     string
+	Port     int
 	Username string
 	Password string
 }
@@ -91,7 +93,7 @@ closeTag:
 
 //InitRabbitMQProducer 初始化生产者
 func InitRabbitMQProducer(c *Connection) {
-	url := "amqp://" + c.Rabbit.Username + ":" + c.Rabbit.Password + "@" + c.Rabbit.Host + "/"
+	url := "amqp://" + c.Rabbit.Username + ":" + c.Rabbit.Password + "@" + c.Rabbit.Host + ":" + cast.ToString(c.Rabbit.Port) + "/"
 	conn, err := dial(url)
 	if err != nil {
 		soelog.Logger.Error(fmt.Sprintf("rabbitMQ连接异常:%s", err.Error()))

@@ -8,16 +8,24 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/soedev/soelib/common/auth2"
 	"github.com/soedev/soelib/common/db/specialdb"
 	"github.com/soedev/soelib/common/des"
 	"github.com/soedev/soelib/common/soelog"
 	"github.com/soedev/soelib/common/soesentry"
 	"github.com/soedev/soelib/net/emqtt"
+	"github.com/soedev/soelib/net/rabbitmq"
 	"github.com/soedev/soelib/net/soehttp"
 	"github.com/soedev/soelib/net/soetcp"
 	"github.com/soedev/soelib/net/soetrace"
+	"github.com/soedev/soelib/tools/nacos"
 	"os"
+)
+
+const (
+	RabbitConfigDataID  = "rabbit.config"
+	RabbitConfigGroupID = "soe"
 )
 
 type JsonConfig struct {
@@ -33,6 +41,8 @@ type JsonConfig struct {
 	Sentry        soesentry.Sentry
 	Kafka         kafka
 	SlowInterface slowInterface
+	Rabbit        rabbitmq.Rabbit
+	AcmConfig     nacos.AcmConfig
 }
 
 //emqtt  服务端以及客户端配置
@@ -166,4 +176,29 @@ func (s *JsonConfig) Check() {
 	if s.AuthToken.Grpc.Host == "" {
 		s.AuthToken.Grpc.Host = "127.0.0.1"
 	}
+	if s.AcmConfig.AccessKey != "" {
+		s.AcmConfig.AccessKey = des.DecryptDESECB([]byte(s.AcmConfig.AccessKey), des.DesKey)
+	}
+	if s.AcmConfig.SecretKey != "" {
+		s.AcmConfig.SecretKey = des.DecryptDESECB([]byte(s.AcmConfig.SecretKey), des.DesKey)
+	}
+}
+
+//GetAcmConfig 获取acm相关连接
+func GetAcmConfig(dataID string, groupID string, config *JsonConfig) error {
+	if nacos.AcmClient == nil {
+		return errors.New("acm连接失败")
+	}
+	content, err := nacos.GetAcmContent(dataID, groupID)
+	if err != nil {
+		soelog.Logger.Error("获取acm内容错误：" + err.Error())
+		return err
+	} else if content != "" && content != "{}" {
+		switch dataID {
+		case RabbitConfigDataID:
+			json.Unmarshal([]byte(content), &config.Rabbit)
+			return nil
+		}
+	}
+	return nil
 }
