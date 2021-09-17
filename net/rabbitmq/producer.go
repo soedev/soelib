@@ -2,26 +2,32 @@ package rabbitmq
 
 import (
 	"fmt"
+	"github.com/soedev/soelib/common/config"
 	"github.com/soedev/soelib/common/soelog"
+	"github.com/soedev/soelib/tools/ants"
 	"github.com/spf13/cast"
 	"github.com/streadway/amqp"
 	"time"
 )
 
-type Rabbit struct {
-	Host     string
-	Port     int
-	Username string
-	Password string
-}
+//Rabbit连接
 type Connection struct {
-	Conn            *amqp.Connection
-	Ch              *amqp.Channel
+	//连接
+	Conn *amqp.Connection
+	//通道
+	Ch *amqp.Channel
+	//连接异常结束
 	ConnNotifyClose chan *amqp.Error
-	ChNotifyClose   chan *amqp.Error
-	URL             string
-	Rabbit          Rabbit
-	CloseProcess    chan bool
+	//通道异常接收
+	ChNotifyClose chan *amqp.Error
+	URL           string
+	Rabbit        config.Rabbit
+	//用于关闭进程
+	CloseProcess chan bool
+	//消费者信息
+	RabbitConsumerList []config.RabbitConsumerInfo
+	//自定义消费者处理函数
+	ConsumeHandle func(<-chan amqp.Delivery)
 }
 
 func dial(url string) (*amqp.Connection, error) {
@@ -31,51 +37,65 @@ func dial(url string) (*amqp.Connection, error) {
 	}
 	return conn, nil
 }
-func (c *Connection) ReConnector() {
-	closeFlag := false
+
+//ProducerReConnect 生产者重连
+func (c *Connection) ProducerReConnect() {
 closeTag:
 	for {
 		c.ConnNotifyClose = c.Conn.NotifyClose(make(chan *amqp.Error))
 		c.ChNotifyClose = c.Ch.NotifyClose(make(chan *amqp.Error))
 		select {
 		case connErr, _ := <-c.ConnNotifyClose:
-			soelog.Logger.Error(fmt.Sprintf("rabbit连接异常:%s", connErr.Error()))
+			if connErr != nil {
+				soelog.Logger.Error(fmt.Sprintf("rabbitMQ连接异常:%s", connErr.Error()))
+			}
 			// 判断连接是否关闭
 			if !c.Conn.IsClosed() {
 				if err := c.Conn.Close(); err != nil {
 					soelog.Logger.Error(fmt.Sprintf("rabbit连接关闭异常:%s", err.Error()))
 				}
 			}
+			//重新连接
 			if conn, err := dial(c.URL); err != nil {
 				soelog.Logger.Error(fmt.Sprintf("rabbit重连失败:%s", err.Error()))
 				_, isConnChannelOpen := <-c.ConnNotifyClose
 				if isConnChannelOpen {
 					close(c.ConnNotifyClose)
 				}
-				//ChNotifyClose 自动关闭
-				go InitRabbitMQProducer(c)
-				closeFlag = true
-			} else {
-				ch, _ := conn.Channel()
-				c.Ch = ch
+				//connection关闭时会自动关闭channel
+				ants.Submit(func() { c.InitRabbitMQProducer(false, c.Rabbit) })
+				//结束子进程
+				break closeTag
+			} else { //连接成功
+				c.Ch, _ = conn.Channel()
 				c.Conn = conn
-				soelog.Logger.Info("rabbit重连成功")
+				soelog.Logger.Info("rabbitMQ重连成功")
 			}
 			// IMPORTANT: 必须清空 Notify，否则死连接不会释放
 			for err := range c.ConnNotifyClose {
 				println(err)
 			}
 		case chErr, _ := <-c.ChNotifyClose:
-			soelog.Logger.Error(fmt.Sprintf("rabbit通道连接关闭:%s", chErr.Error()))
+			if chErr != nil {
+				soelog.Logger.Error(fmt.Sprintf("rabbitMQ通道连接关闭:%s", chErr.Error()))
+			}
 			// 重新打开一个并发服务器通道来处理消息
 			if !c.Conn.IsClosed() {
 				ch, err := c.Conn.Channel()
 				if err != nil {
-					soelog.Logger.Error(fmt.Sprintf("rabbit channel重连失败:%s", err.Error()))
+					soelog.Logger.Error(fmt.Sprintf("rabbitMQ channel重连失败:%s", err.Error()))
 					c.ChNotifyClose <- chErr
 				} else {
+					soelog.Logger.Info("rabbitMQ通道重新创建成功")
 					c.Ch = ch
 				}
+			} else {
+				_, isConnChannelOpen := <-c.ConnNotifyClose
+				if isConnChannelOpen {
+					close(c.ConnNotifyClose)
+				}
+				ants.Submit(func() { c.InitRabbitMQProducer(false, c.Rabbit) })
+				break closeTag
 			}
 			for err := range c.ChNotifyClose {
 				println(err)
@@ -83,25 +103,26 @@ closeTag:
 		case <-c.CloseProcess:
 			break closeTag
 		}
-		//结束进程
-		if closeFlag {
-			break
-		}
 	}
-	soelog.Logger.Info("结束生产者进程")
+	soelog.Logger.Info("结束旧生产者进程")
 }
 
 //InitRabbitMQProducer 初始化生产者
-func InitRabbitMQProducer(c *Connection) {
+func (c *Connection) InitRabbitMQProducer(isClose bool, rabbitMQConfig config.Rabbit) {
+	if isClose {
+		c.CloseProcess <- true
+	}
+	c.Rabbit = rabbitMQConfig
 	url := "amqp://" + c.Rabbit.Username + ":" + c.Rabbit.Password + "@" + c.Rabbit.Host + ":" + cast.ToString(c.Rabbit.Port) + "/"
 	conn, err := dial(url)
 	if err != nil {
 		soelog.Logger.Error(fmt.Sprintf("rabbitMQ连接异常:%s", err.Error()))
-		soelog.Logger.Info("休息5S,开始重连rabbitMQ")
+		soelog.Logger.Info("休息5S,开始重连rabbitMQ生产者")
 		time.Sleep(5 * time.Second)
-		go InitRabbitMQProducer(c)
+		ants.Submit(func() { c.InitRabbitMQProducer(false, c.Rabbit) })
 		return
 	}
+	defer conn.Close()
 	soelog.Logger.Info("rabbitMQ生产者连接成功")
 	// 打开一个并发服务器通道来处理消息
 	ch, err := conn.Channel()
@@ -109,12 +130,13 @@ func InitRabbitMQProducer(c *Connection) {
 		soelog.Logger.Error(fmt.Sprintf("rabbitMQ打开通道异常:%s", err.Error()))
 		return
 	}
+	defer ch.Close()
 	c.Conn = conn
 	c.URL = url
 	c.Ch = ch
 	c.CloseProcess = make(chan bool, 1)
-	c.ReConnector()
-	soelog.Logger.Info("结束rabbitMQ生产者")
+	c.ProducerReConnect()
+	soelog.Logger.Info("结束rabbitMQ旧生产者")
 	return
 }
 

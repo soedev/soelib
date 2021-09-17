@@ -15,7 +15,6 @@ import (
 	"github.com/soedev/soelib/common/soelog"
 	"github.com/soedev/soelib/common/soesentry"
 	"github.com/soedev/soelib/net/emqtt"
-	"github.com/soedev/soelib/net/rabbitmq"
 	"github.com/soedev/soelib/net/soehttp"
 	"github.com/soedev/soelib/net/soetcp"
 	"github.com/soedev/soelib/net/soetrace"
@@ -41,7 +40,7 @@ type JsonConfig struct {
 	Sentry        soesentry.Sentry
 	Kafka         kafka
 	SlowInterface slowInterface
-	Rabbit        rabbitmq.Rabbit
+	Rabbit        Rabbit
 	AcmConfig     nacos.AcmConfig
 }
 
@@ -72,6 +71,20 @@ type kafka struct {
 type slowInterface struct {
 	SlowTime int
 	Tag      string
+}
+type Rabbit struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+}
+type RabbitConsumerInfo struct {
+	//交换机
+	ExchangeName string
+	//队列
+	QueueName string
+	//模式
+	ExchangeType string
 }
 
 //JsonConfig 配置信息
