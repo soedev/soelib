@@ -1,6 +1,7 @@
 package rabbitmq
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/soedev/soelib/common/config"
 	"github.com/soedev/soelib/common/soelog"
@@ -26,8 +27,21 @@ type Connection struct {
 	CloseProcess chan bool
 	//消费者信息
 	RabbitConsumerList []config.RabbitConsumerInfo
+	//生产者信息
+	RabbitProducerMap map[string]string
 	//自定义消费者处理函数
 	ConsumeHandle func(<-chan amqp.Delivery)
+}
+
+const (
+	CancelOrderDelayQueue = "soesoft.cancel.order.delay.queue"
+	DelayExchange         = "soesoft.delay.exchange"
+)
+
+type DLXMessage struct {
+	QueueName   string `json:"queueName"`
+	Content     string `json:"content"`
+	NotifyCount int    `json:"notifyCount"`
 }
 
 func dial(url string) (*amqp.Connection, error) {
@@ -138,6 +152,72 @@ func (c *Connection) InitRabbitMQProducer(isClose bool, rabbitMQConfig config.Ra
 	c.ProducerReConnect()
 	soelog.Logger.Info("结束rabbitMQ旧生产者")
 	return
+}
+
+//SendAutoCancelOrderMessage 发送消息
+func (c *Connection) SendAutoCancelOrderMessage(body []byte, autoCancelTime int) error {
+	m := DLXMessage{
+		QueueName:   CancelOrderDelayQueue,
+		Content:     string(body),
+		NotifyCount: 1,
+	}
+	body, _ = json.Marshal(m)
+	// 发布
+	err := c.Ch.Publish(
+		DelayExchange,         // exchange 默认模式，exchange为空
+		CancelOrderDelayQueue, // routing key 默认模式路由到同名队列，即是task_queue
+		false,                 // mandatory
+		false,
+		amqp.Publishing{
+			Headers: amqp.Table{
+				"x-delay": autoCancelTime * 60 * 1000,
+			},
+			DeliveryMode: amqp.Persistent,
+			ContentType:  "text/plain",
+			Body:         []byte(body),
+		})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Connection) SendMessage(body []byte, queueName string) {
+	if c.RabbitProducerMap == nil {
+		soelog.Logger.Error("未初始化生产者信息")
+		return
+	}
+	if queueName == "" {
+		soelog.Logger.Error("队列名称不能为空")
+		return
+	}
+	exchangeName := c.RabbitProducerMap[queueName]
+	if exchangeName == "" {
+		soelog.Logger.Error("交换机名称不能为空")
+		return
+	}
+	m := DLXMessage{
+		QueueName:   queueName,
+		Content:     string(body),
+		NotifyCount: 1,
+	}
+	body, _ = json.Marshal(m)
+	// 发布
+	err := c.Ch.Publish(
+		exchangeName, // exchange 默认模式，exchange为空
+		queueName,    // routing key 默认模式路由到同名队列，即是task_queue
+		false,        // mandatory
+		false,
+		amqp.Publishing{
+			// 持久性的发布，因为队列被声明为持久的，发布消息必须加上这个（可能不用），但消息还是可能会丢，如消息到缓存但MQ挂了来不及持久化。
+			DeliveryMode: amqp.Persistent,
+			ContentType:  "text/plain",
+			Body:         []byte(body),
+		})
+	if err != nil {
+		soelog.Logger.Error("rabbitMQ 发送消息失败:" + err.Error())
+		return
+	}
 }
 
 /*
