@@ -11,6 +11,14 @@ import (
 	"time"
 )
 
+//Message 消息
+type Message struct {
+	Exchange    string `json:"exchange"`
+	QueueName   string `json:"queueName"`
+	Content     string `json:"content"`
+	NotifyCount int    `json:"notifyCount"`
+}
+
 //InitRabbitMQConsumer 初始化消费者
 func (c *Connection) InitRabbitMQConsumer(isClose bool, rabbitMQConfig config.Rabbit) {
 	if isClose {
