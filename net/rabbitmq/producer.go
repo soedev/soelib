@@ -183,7 +183,7 @@ func (c *Connection) SendAutoCancelOrderMessage(body []byte, autoCancelTime int)
 }
 
 func (c *Connection) SendMessage(body []byte, queueName string) {
-	if c.RabbitProducerMap == nil {
+	if c.RabbitProducerMap == nil || len(c.RabbitProducerMap) == 0 {
 		soelog.Logger.Error("未初始化生产者信息")
 		return
 	}
