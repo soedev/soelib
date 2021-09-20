@@ -18,7 +18,7 @@ require (
 	github.com/eclipse/paho.mqtt.golang v1.2.0
 	github.com/getsentry/raven-go v0.2.0
 	github.com/getsentry/sentry-go v0.9.0
-	github.com/gin-gonic/gin v1.5.0
+	github.com/gin-gonic/gin v1.7.0
 	github.com/go-ini/ini v1.54.0
 	github.com/golang/protobuf v1.4.1
 	github.com/gomodule/redigo v2.0.0+incompatible
