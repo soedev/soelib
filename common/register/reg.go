@@ -77,21 +77,25 @@ const (
 
 //CheckReg 软件注册 是否调试、租户号、软件版本、注册唯一编码、软件kind、强制店号检测（码重复的时候，本地设置店号用来强制检测）
 func CheckReg(regURL string, tenantID int, version, deviceID, kind, checkShop string) (*RegInfo, error) {
-	var regResponse = RegResponse{}
-	filePath, _ := os.Executable()
-	powerDes := des.PowerDes{}
-	token, _ := powerDes.PowerEncryStr(deviceID+time.Now().Format("2006-01-02"), des.PowerDesKey)
 	reg := Reg{
 		Kind:       kind,
 		PlugInName: plugInName,
-		FileName:   filePath,
 		Ver:        version,
-		//TenantCode: tenantCode,
 		TenantID: tenantID,
-		Token:    token,
 		DeviceID: deviceID,
-		//OsInfo:
 	}
+	return CheckRegWithOsInfo(reg,regURL,checkShop)
+}
+
+//CheckRegWithOsInfo 软件注册 是否调试、租户号、软件版本、注册唯一编码、软件kind、强制店号检测（码重复的时候，本地设置店号用来强制检测）
+func CheckRegWithOsInfo(reg Reg,regURL,checkShop string) (*RegInfo, error) {
+	var regResponse = RegResponse{}
+	filePath, _ := os.Executable()
+	powerDes := des.PowerDes{}
+	token, _ := powerDes.PowerEncryStr(reg.DeviceID+time.Now().Format("2006-01-02"), des.PowerDesKey)
+	reg.FileName = filePath
+	reg.Token = token
+
 	postBody, _ := json.Marshal(reg)
 
 	tr := &http.Transport{ //解决x509: certificate signed by unknown authority

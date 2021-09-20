@@ -32,7 +32,10 @@ require (
 	github.com/nacos-group/nacos-sdk-go v1.0.8
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/openzipkin/zipkin-go v0.2.2
+	github.com/pkg/errors v0.9.1
+	github.com/spf13/cast v1.3.0
 	github.com/spf13/viper v1.6.2
+	github.com/streadway/amqp v0.0.0-20190404075320-75d898a42a94
 	github.com/uber/jaeger-client-go v2.23.1+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
 	github.com/ulule/deepcopier v0.0.0-20200117111125-792cfb847af8
