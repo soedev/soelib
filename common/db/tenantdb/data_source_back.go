@@ -30,7 +30,11 @@ func (TenantDataSourceBack) TableName() string {
 //GetByTenantID 根据租户号取得第一条数据源
 func (t *TenantDataSourceBack) GetByTenantID(tenantID string) (*TenantDataSourceBack, error) {
 	var tds []TenantDataSourceBack
-	t.Db.Where("tenant_id = ?", tenantID).Find(&tds)
+	sql := `SELECT * FROM crm.tenant_datasource_back 
+		INNER JOIN crm.client on crm.tenant_datasource_back.tenant_id=crm.client.tenant_id
+		INNER JOIN crm.client_shop on crm.client.uid = crm.client_shop.client_uid 
+		where crm.tenant_datasource_back.tenant_id=? or crm.client_shop.code=? limit 1`
+	t.Db.Raw(sql, tenantID,tenantID).Find(&tds)
 	if len(tds) == 0 {
 		return nil, nil
 	}
