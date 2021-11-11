@@ -126,6 +126,22 @@ func (s *EmqttClient) Publish(topic string, msg []byte) {
 	}
 }
 
+func (s *EmqttClient) PublishByQos(topic string, msg []byte, qos byte) {
+	if qos < 0 || qos > 2 {
+		log.Println("qos 不正确:" + string(qos))
+		return
+	}
+	if s.MQTT == nil {
+		log.Println("EMQTT 未连接上服务器")
+		return
+	}
+	if s.MQTT.IsConnected() {
+		s.MQTT.Publish(topic, qos, false, string(msg))
+	} else {
+		log.Println(fmt.Sprintf("发生消息到通道%s错误，Emqtt 未连接", topic))
+	}
+}
+
 func (s *EmqttClient) PublishStrMsg(topic string, msg string) {
 	if s.MQTT == nil {
 		log.Println("EMQTT 未连接上服务器")
@@ -133,6 +149,22 @@ func (s *EmqttClient) PublishStrMsg(topic string, msg string) {
 	}
 	if s.MQTT.IsConnected() {
 		s.MQTT.Publish(topic, 0, false, msg)
+	} else {
+		log.Println(fmt.Sprintf("发生消息到通道%s错误，Emqtt 未连接", topic))
+	}
+}
+
+func (s *EmqttClient) PublicStrMsgByQos(topic string, msg string, qos byte) {
+	if qos < 0 || qos > 2 {
+		log.Println("qos 不正确:" + string(qos))
+		return
+	}
+	if s.MQTT == nil {
+		log.Println("EMQTT 未连接上服务器")
+		return
+	}
+	if s.MQTT.IsConnected() {
+		s.MQTT.Publish(topic, qos, false, msg)
 	} else {
 		log.Println(fmt.Sprintf("发生消息到通道%s错误，Emqtt 未连接", topic))
 	}
