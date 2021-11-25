@@ -111,6 +111,23 @@ closeTag:
 		var err *amqp.Error
 		select {
 		case err, _ = <-c.ConnNotifyClose:
+			if err != nil {
+				soelog.Logger.Error(fmt.Sprintf("rabbit消费者连接异常:%s", err.Error()))
+			}
+			// 判断连接是否关闭
+			if !c.Conn.IsClosed() {
+				if err := c.Conn.Close(); err != nil {
+					soelog.Logger.Error(fmt.Sprintf("rabbit连接关闭异常:%s", err.Error()))
+				}
+			}
+			_, isConnChannelOpen := <-c.ConnNotifyClose
+			if isConnChannelOpen {
+				close(c.ConnNotifyClose)
+			}
+			ants.Submit(func() {
+				c.InitRabbitMQConsumer(false, c.Rabbit)
+			})
+			break closeTag
 		case err, _ = <-c.ChNotifyClose:
 			if err != nil {
 				soelog.Logger.Error(fmt.Sprintf("rabbit消费者连接异常:%s", err.Error()))
