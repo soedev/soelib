@@ -3,10 +3,8 @@ package slowInterface
 import (
 	"encoding/json"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/soedev/soelib/net/kafka"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -32,65 +30,57 @@ func SlowInterface(kafkaServer, tag string, slowTime int) gin.HandlerFunc {
 }
 
 func GetSlowInterface(kafkaServer, tag string, slowTime int) gin.HandlerFunc {
-	// 选择要跳过的接口
-	//notlogged := make([]string, 0)
-	//
-	//var skip map[string]struct{}
-	//
-	//if length := len(notlogged); length > 0 {
-	//	skip = make(map[string]struct{}, length)
-	//
-	//	for _, path := range notlogged {
-	//		skip[path] = struct{}{}
-	//	}
-	//}
+	notlogged := make([]string, 0)
+
+	var skip map[string]struct{}
+
+	if length := len(notlogged); length > 0 {
+		skip = make(map[string]struct{}, length)
+
+		for _, path := range notlogged {
+			skip[path] = struct{}{}
+		}
+	}
 
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
 
-		// Log only when path is not being skipped
-		//if _, ok := skip[path]; !ok {
-		tenantID := c.Request.Header.Get("tenantId")
-		shopCode := c.Request.Header.Get("shopCode")
-		if tenantID == "" || shopCode == "" {
-			return
-		}
-
-		param := SlowInterfaceParams{
-			Key:      strings.ReplaceAll(uuid.New().String(), "-", ""),
-			Request:  c.Request,
-			Keys:     c.Keys,
-			Tag:      tag,
-			TenantID: tenantID,
-			ShopCode: shopCode,
-			Datetime: start,
-			Path:     path,
-			Method:   c.Request.Method,
-			Type:     1,
-		}
-
-		bytes, _ := json.Marshal(param)
-		// 发送到kafka，记录访问时间
-		kafka.SendSarama(kafkaServer, "slow_interface", bytes)
-
 		// Process request
 		c.Next()
 
-		// 计算访问时间
-		param.TimeStamp = time.Now()
-		param.Latency = param.TimeStamp.Sub(start)
+		// Log only when path is not being skipped
+		if _, ok := skip[path]; !ok {
+			tenantID := c.Request.Header.Get("tenantId")
+			shopCode := c.Request.Header.Get("shopCode")
+			if tenantID == "" || shopCode == "" {
+				return
+			}
 
-		times := slowTime * 1000000
-		if param.Latency < time.Duration(times) {
-			param.IsSkip = true
+			param := SlowInterfaceParams{
+				Request:  c.Request,
+				Keys:     c.Keys,
+				Tag:      tag,
+				TenantID: tenantID,
+				ShopCode: shopCode,
+			}
+
+			// Stop timer
+			param.TimeStamp = time.Now()
+			param.Latency = param.TimeStamp.Sub(start)
+
+			times := slowTime * 1000000
+			if param.Latency < time.Duration(times) {
+				return
+			}
+
+			param.Method = c.Request.Method
+
+			param.Path = path
+
+			bytes, _ := json.Marshal(param)
+			// 发送到kafka
+			kafka.SendSarama(kafkaServer, "slow_interface", bytes)
 		}
-		param.Type = 0
-		param.Datetime = param.TimeStamp
-
-		bytes, _ = json.Marshal(param)
-		// 发送到kafka，记录返回时间
-		kafka.SendSarama(kafkaServer, "slow_interface", bytes)
-		//}
 	}
 }
