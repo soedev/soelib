@@ -77,6 +77,7 @@ type Rabbit struct {
 	Port     int
 	Username string
 	Password string
+	Vhost string
 }
 type RabbitConsumerInfo struct {
 	//交换机
