@@ -41,6 +41,7 @@ type JsonConfig struct {
 	Kafka         kafka
 	SlowInterface slowInterface
 	Rabbit        Rabbit
+	AliRabbit        Rabbit
 	AcmConfig     nacos.AcmConfig
 }
 
