@@ -3,7 +3,7 @@ package slowInterface
 import (
 	"encoding/json"
 	"github.com/gin-gonic/gin"
-	"github.com/soedev/soelib/net/kafka"
+	alirabbitmq "github.com/soedev/soelib/net/alirabbit"
 	"net/http"
 	"time"
 )
@@ -25,11 +25,11 @@ type SlowInterfaceParams struct {
 }
 
 //SlowInterface 慢接口统计
-func SlowInterface(kafkaServer, tag string, slowTime int) gin.HandlerFunc {
-	return GetSlowInterface(kafkaServer, tag, slowTime)
+func SlowInterface( tag string, slowTime int,rabbitCon alirabbitmq.Connection) gin.HandlerFunc {
+	return GetSlowInterface( tag, slowTime,rabbitCon)
 }
 
-func GetSlowInterface(kafkaServer, tag string, slowTime int) gin.HandlerFunc {
+func GetSlowInterface( tag string, slowTime int,rabbitCon alirabbitmq.Connection) gin.HandlerFunc {
 	notlogged := make([]string, 0)
 
 	var skip map[string]struct{}
@@ -69,8 +69,8 @@ func GetSlowInterface(kafkaServer, tag string, slowTime int) gin.HandlerFunc {
 			param.TimeStamp = time.Now()
 			param.Latency = param.TimeStamp.Sub(start)
 
-			times := slowTime * 1000000
-			if param.Latency < time.Duration(times) {
+			//times := slowTime * 1000000
+			if param.Latency.Seconds()*1 < (time.Second*time.Duration(slowTime)).Seconds() {
 				return
 			}
 
@@ -79,8 +79,7 @@ func GetSlowInterface(kafkaServer, tag string, slowTime int) gin.HandlerFunc {
 			param.Path = path
 
 			bytes, _ := json.Marshal(param)
-			// 发送到kafka
-			kafka.SendSarama(kafkaServer, "slow_interface", bytes)
+			rabbitCon.SendMessage(bytes,"soesoft.slow.queue")
 		}
 	}
 }
