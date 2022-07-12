@@ -25,11 +25,11 @@ type SlowInterfaceParams struct {
 }
 
 //SlowInterface 慢接口统计
-func SlowInterface( tag string, slowTime int,rabbitCon alirabbitmq.Connection) gin.HandlerFunc {
-	return GetSlowInterface( tag, slowTime,rabbitCon)
+func SlowInterface( tag string, slowTimeMillisecond int,rabbitCon *alirabbitmq.Connection) gin.HandlerFunc {
+	return GetSlowInterface( tag, slowTimeMillisecond,rabbitCon)
 }
 
-func GetSlowInterface( tag string, slowTime int,rabbitCon alirabbitmq.Connection) gin.HandlerFunc {
+func GetSlowInterface( tag string, slowTimeMillisecond int,rabbitCon *alirabbitmq.Connection) gin.HandlerFunc {
 	notlogged := make([]string, 0)
 
 	var skip map[string]struct{}
@@ -70,7 +70,7 @@ func GetSlowInterface( tag string, slowTime int,rabbitCon alirabbitmq.Connection
 			param.Latency = param.TimeStamp.Sub(start)
 
 			//times := slowTime * 1000000
-			if param.Latency.Seconds()*1 < (time.Second*time.Duration(slowTime)).Seconds() {
+			if param.Latency.Milliseconds()*1 < (time.Millisecond*time.Duration(slowTimeMillisecond)).Milliseconds() {
 				return
 			}
 
