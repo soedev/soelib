@@ -303,6 +303,21 @@ func DateTimeBetweenMinutes(startDateTime, endDateTime string) (float64, error) 
 	return t, nil
 }
 
+//DateTimeBetweenMinutes 时间的相距分钟
+func DateTimeBetweenSeconds(startDateTime, endDateTime string) (float64, error) {
+
+	startTime, err := time.Parse("2006-01-02 15:04:05", startDateTime)
+	if err != nil {
+		return 0, errors.New("开始时间传入有误")
+	}
+	endTime, err := time.Parse("2006-01-02 15:04:05", endDateTime)
+	if err != nil {
+		return 0, errors.New("结束时间传入有误")
+	}
+	t := endTime.Sub(startTime).Seconds()
+	return t, nil
+}
+
 //StringDateTimeToDateTime 字符串转为时间格式
 func StringDateTimeToDateTime(dateTime string) (*time.Time, error) {
 	t, err := time.Parse("2006-01-02 15:04:05", dateTime)
