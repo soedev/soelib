@@ -303,7 +303,7 @@ func DateTimeBetweenMinutes(startDateTime, endDateTime string) (float64, error) 
 	return t, nil
 }
 
-//DateTimeBetweenMinutes 时间的相距分钟
+//DateTimeBetweenSeconds 时间的相距秒数
 func DateTimeBetweenSeconds(startDateTime, endDateTime string) (float64, error) {
 
 	startTime, err := time.Parse("2006-01-02 15:04:05", startDateTime)
