@@ -18,7 +18,7 @@ require (
 	github.com/eclipse/paho.mqtt.golang v1.2.0
 	github.com/getsentry/raven-go v0.2.0
 	github.com/getsentry/sentry-go v0.9.0
-	github.com/gin-gonic/gin v1.5.0
+	github.com/gin-gonic/gin v1.7.7
 	github.com/go-ini/ini v1.54.0
 	github.com/golang/protobuf v1.4.1
 	github.com/gomodule/redigo v2.0.0+incompatible
@@ -40,6 +40,7 @@ require (
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
 	github.com/ulule/deepcopier v0.0.0-20200117111125-792cfb847af8
 	go.uber.org/zap v1.15.0
+	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/net v0.0.0-20200301022130-244492dfa37a
 	golang.org/x/text v0.3.3
 	google.golang.org/grpc v1.27.0
