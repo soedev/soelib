@@ -8,7 +8,7 @@ require (
 	github.com/Shopify/sarama v1.19.0
 	github.com/afex/hystrix-go v0.0.0-20180502004556-fa1af6a1f4f5
 	github.com/alex023/clock v0.0.0-20191208111215-c265f1b2ab18
-	github.com/astaxie/beego v1.12.1
+	github.com/astaxie/beego v1.12.2
 	github.com/axgle/mahonia v0.0.0-20180208002826-3358181d7394
 	github.com/certifi/gocertifi v0.0.0-20200211180108-c7c1fbc02894 // indirect
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
@@ -20,7 +20,7 @@ require (
 	github.com/getsentry/sentry-go v0.9.0
 	github.com/gin-gonic/gin v1.5.0
 	github.com/go-ini/ini v1.54.0
-	github.com/golang/protobuf v1.4.1
+	github.com/golang/protobuf v1.4.2
 	github.com/gomodule/redigo v2.0.0+incompatible
 	github.com/google/uuid v1.1.1
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf
@@ -40,6 +40,7 @@ require (
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
 	github.com/ulule/deepcopier v0.0.0-20200117111125-792cfb847af8
 	go.uber.org/zap v1.15.0
+	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/net v0.0.0-20200301022130-244492dfa37a
 	golang.org/x/text v0.3.3
 	google.golang.org/grpc v1.27.0
