@@ -40,8 +40,9 @@ require (
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
 	github.com/ulule/deepcopier v0.0.0-20200117111125-792cfb847af8
 	go.uber.org/zap v1.15.0
-	golang.org/x/net v0.0.0-20200301022130-244492dfa37a
-	golang.org/x/text v0.3.3
+	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
+	golang.org/x/net v0.7.0
+	golang.org/x/text v0.7.0
 	google.golang.org/grpc v1.27.0
 	google.golang.org/protobuf v1.24.0
 	gopkg.in/mgo.v2 v2.0.0-20190816093944-a6b53ec6cb22
