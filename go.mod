@@ -27,7 +27,7 @@ require (
 	github.com/jackc/pgx/v4 v4.10.1
 	github.com/jinzhu/gorm v1.9.12
 	github.com/jinzhu/inflection v1.0.0
-	github.com/jinzhu/now v1.0.1
+	github.com/jinzhu/now v1.1.5
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/nacos-group/nacos-sdk-go v1.0.8
 	github.com/opentracing/opentracing-go v1.1.0
@@ -40,9 +40,13 @@ require (
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
 	github.com/ulule/deepcopier v0.0.0-20200117111125-792cfb847af8
 	go.uber.org/zap v1.15.0
-	golang.org/x/net v0.0.0-20200301022130-244492dfa37a
-	golang.org/x/text v0.3.3
+	golang.org/x/crypto v0.8.0
+	golang.org/x/net v0.9.0
+	golang.org/x/text v0.9.0
 	google.golang.org/grpc v1.27.0
 	google.golang.org/protobuf v1.24.0
 	gopkg.in/mgo.v2 v2.0.0-20190816093944-a6b53ec6cb22
+	gorm.io/driver/mysql v1.5.1
+	gorm.io/driver/postgres v1.5.2
+	gorm.io/gorm v1.25.1
 )

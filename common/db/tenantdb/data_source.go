@@ -2,7 +2,7 @@ package tenantdb
 
 import (
 	"errors"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 	"time"
 )
 
@@ -22,19 +22,19 @@ type TenantDataSource struct {
 	ExpMinute       time.Duration `json:"expMinute"`
 }
 
-//TableName 设置表名
+// TableName 设置表名
 func (TenantDataSource) TableName() string {
 	return "crm.tenant_datasource"
 }
 
-//GetByTenantID 根据租户号取得第一条数据源
+// GetByTenantID 根据租户号取得第一条数据源
 func (t *TenantDataSource) GetByTenantID(tenantID string) (TenantDataSource, error) {
 	var tds []TenantDataSource
 	sql := `SELECT * FROM crm.tenant_datasource 
 		INNER JOIN crm.client on crm.tenant_datasource.tenant_id=crm.client.tenant_id
 		INNER JOIN crm.client_shop on crm.client.uid = crm.client_shop.client_uid 
 		where crm.tenant_datasource.tenant_id=? or crm.client_shop.code=? limit 1`
-	t.Db.Raw(sql, tenantID,tenantID).Find(&tds)
+	t.Db.Raw(sql, tenantID, tenantID).Find(&tds)
 	if len(tds) == 0 {
 		return TenantDataSource{}, errors.New("数据源未配置！")
 	}

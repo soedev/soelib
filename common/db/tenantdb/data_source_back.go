@@ -2,7 +2,7 @@ package tenantdb
 
 import (
 	"errors"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 	"time"
 )
 
@@ -27,14 +27,14 @@ func (TenantDataSourceBack) TableName() string {
 	return "crm.tenant_datasource_back"
 }
 
-//GetByTenantID 根据租户号取得第一条数据源
+// GetByTenantID 根据租户号取得第一条数据源
 func (t *TenantDataSourceBack) GetByTenantID(tenantID string) (*TenantDataSourceBack, error) {
 	var tds []TenantDataSourceBack
 	sql := `SELECT * FROM crm.tenant_datasource_back 
 		INNER JOIN crm.client on crm.tenant_datasource_back.tenant_id=crm.client.tenant_id
 		INNER JOIN crm.client_shop on crm.client.uid = crm.client_shop.client_uid 
 		where crm.tenant_datasource_back.tenant_id=? or crm.client_shop.code=? limit 1`
-	t.Db.Raw(sql, tenantID,tenantID).Find(&tds)
+	t.Db.Raw(sql, tenantID, tenantID).Find(&tds)
 	if len(tds) == 0 {
 		return nil, nil
 	}

@@ -2,7 +2,9 @@ package specialdb
 
 import (
 	"errors"
-	"github.com/jinzhu/gorm"
+	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 	"regexp"
 	"time"
 )
@@ -16,20 +18,33 @@ type DbConfig struct {
 	ConnMaxLifetime time.Duration
 }
 
-//Setup 初始化数据库
+// Setup 初始化数据库
 func ConnDB(config DbConfig) (*gorm.DB, error) {
-	db, err := gorm.Open(config.Dialect, config.DBInfo)
-	if err != nil {
-		return nil, err
+	var db *gorm.DB
+	var err error
+	if config.Dialect == "mysql" {
+		dialect := mysql.New(mysql.Config{
+			DSN: config.DBInfo},
+		)
+		db, err = gorm.Open(dialect)
+		if err != nil {
+			return nil, err
+		}
+	} else if config.Dialect == "postgres" {
+		dialect := postgres.Open(config.DBInfo)
+		db, err = gorm.Open(dialect)
+		if err != nil {
+			return nil, err
+		}
 	}
-	db.DB().SetMaxIdleConns(config.MaxIdleConns)       //最大空闲数
-	db.DB().SetMaxOpenConns(config.MaxOpenConns)       //最大连接数
-	db.DB().SetConnMaxLifetime(config.ConnMaxLifetime) //设置最大空闲时间，超过将关闭连接
-	db.LogMode(config.LogEnable)
+	Db, _ := db.DB()
+	Db.SetMaxIdleConns(config.MaxIdleConns)       //最大空闲数
+	Db.SetMaxOpenConns(config.MaxOpenConns)       //最大连接数
+	Db.SetConnMaxLifetime(config.ConnMaxLifetime) //设置最大空闲时间，超过将关闭连接
 	return db, nil
 }
 
-//Transaction 统一事务
+// Transaction 统一事务
 func Transaction(tx *gorm.DB, fn func() error) (err error) {
 	//开启事务
 	//tx := db
