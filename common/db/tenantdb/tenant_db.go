@@ -4,17 +4,19 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/jinzhu/gorm"
 	"github.com/soedev/soelib/common/des"
 	"github.com/soedev/soelib/common/keylock"
 	"github.com/soedev/soelib/common/soelog"
 	"github.com/soedev/soelib/common/utils"
+	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlserver"
+	"gorm.io/gorm"
 	"log"
 	"sync"
 	"time"
 )
 
-//dbMap 数据源缓存列表
+// dbMap 数据源缓存列表
 var dbMap sync.Map
 
 type OptSQL struct {
@@ -76,13 +78,12 @@ func getSQLDbWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL, enable bool) 
 		return nil, errors.New("数据源设置错误，密码为空！")
 	}
 	dbInfo := fmt.Sprintf("server=%s;user id=%s;password=%s;database=%s;port=%d;encrypt=disable", server, tenantDataSource.UserName, password, dbName, port)
-	dialect := "mssql"
+	sqlDb, err := gorm.Open(sqlserver.Open(dbInfo), &gorm.Config{})
 	if tenantDataSource.DriverClassname == "org.postgresql.ds.PGSimpleDataSource" {
 		dbInfo = fmt.Sprintf("host=%s user=%s port=%d dbname=%s sslmode=disable password=%s application_name=%s",
 			server, tenantDataSource.UserName, port, dbName, password, opt.ApplicationName)
-		dialect = "postgres"
+		sqlDb, err = gorm.Open(postgres.Open(dbInfo), &gorm.Config{})
 	}
-	sqlDb, err := gorm.Open(dialect, dbInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -96,23 +97,27 @@ func getSQLDbWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL, enable bool) 
 	if tenantDataSource.ExpMinute == 0 {
 		tenantDataSource.ExpMinute = 5
 	}
-	sqlDb.DB().SetMaxIdleConns(tenantDataSource.PoolSize)                   //最大空闲数
-	sqlDb.DB().SetMaxOpenConns(tenantDataSource.MaxPoolSize)                //最大连接数
-	sqlDb.DB().SetConnMaxLifetime(tenantDataSource.ExpMinute * time.Minute) //设置最大空闲时间，超过将关闭连接
-	sqlDb.LogMode(opt.LogMode)
+
+	db, _ := sqlDb.DB()
+	db.SetMaxIdleConns(tenantDataSource.PoolSize)                   //最大空闲数
+	db.SetMaxOpenConns(tenantDataSource.MaxPoolSize)                //最大连接数
+	db.SetConnMaxLifetime(tenantDataSource.ExpMinute * time.Minute) //设置最大空闲时间，超过将关闭连接
+	//sqlDb.Logger = logger.Interface.LogMode(logger)
+	//sqlDb.LogMode(opt.LogMode)
 	return sqlDb, nil
 }
 
-//GetDbFromMap 增加数据源到缓存
+// GetDbFromMap 增加数据源到缓存
 func GetDbFromMap(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 	key := "SQLDB_" + tenantID
 	keylock.GetKeyLockIns().Lock(key)
 	defer keylock.GetKeyLockIns().Unlock(key)
 	if sqldb, isOk := dbMap.Load(tenantID); isOk {
 		db := sqldb.(*gorm.DB)
+		dbInfo, _ := db.DB()
 		//go senMsgToWx(tenantID, db.DB().Stats())
-		if err := db.DB().Ping(); err != nil {
-			db.Close()
+		if err := dbInfo.Ping(); err != nil {
+			dbInfo.Close()
 			dbMap.Delete(tenantID)
 			log.Println("移除数据源：", tenantID)
 			newDb, err := GetSQLDb(tenantID, crmdb, false)
@@ -140,9 +145,10 @@ func GetDbFromMapWithOpt(tenantID string, crmdb *gorm.DB, opt *OptSQL) (*gorm.DB
 	defer keylock.GetKeyLockIns().Unlock(key)
 	if sqldb, isOk := dbMap.Load(tenantID); isOk {
 		db := sqldb.(*gorm.DB)
+		dbInfo, _ := db.DB()
 		//go senMsgToWx(tenantID, db.DB().Stats())
-		if err := db.DB().Ping(); err != nil {
-			db.Close()
+		if err := dbInfo.Ping(); err != nil {
+			dbInfo.Close()
 			dbMap.Delete(tenantID)
 			log.Println("移除数据源：", tenantID)
 			newDb, err := getSQLDbWithOpt(tenantID, crmdb, opt, false)
@@ -173,17 +179,17 @@ func senMsgToWx(teantId string, status sql.DBStats) {
 	}
 }
 
-//GetDbFromMapV2 增加数据源到缓存
+// GetDbFromMapV2 增加数据源到缓存
 func GetDbFromMapV2(tenantID string, crmdb *gorm.DB, enable bool) (*gorm.DB, error) {
 	key := "SQLDB_" + tenantID
 	keylock.GetKeyLockIns().Lock(key)
 	defer keylock.GetKeyLockIns().Unlock(key)
 	if sqldb, isOk := dbMap.Load(tenantID); isOk {
 		db := sqldb.(*gorm.DB)
-		sqldb := db.DB()
+		dbInfo, _ := db.DB()
 		//go senMsgToWx(tenantID, db.DB().Stats())
-		if err := sqldb.Ping(); err != nil {
-			sqldb.Close()
+		if err := dbInfo.Ping(); err != nil {
+			dbInfo.Close()
 			dbMap.Delete(tenantID)
 			log.Println("移除数据源：", tenantID)
 			newDb, err := GetSQLDb(tenantID, crmdb, enable)
@@ -208,7 +214,7 @@ func GetDbFromMapV2(tenantID string, crmdb *gorm.DB, enable bool) (*gorm.DB, err
 func UpdateMapV2(tenantID string) {
 	if sqlDb, isOk := dbMap.Load(tenantID); isOk {
 		db := sqlDb.(*gorm.DB)
-		sqlDb := db.DB()
+		sqlDb, _ := db.DB()
 		sqlDb.Close()
 		dbMap.Delete(tenantID)
 		log.Println("更新数据源：", tenantID)
