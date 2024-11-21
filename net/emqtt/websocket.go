@@ -9,7 +9,7 @@ import (
 	"net/url"
 )
 
-//DefaultListenAndServeWebsocket DefaultListenAndServeWebsocket
+// DefaultListenAndServeWebsocket DefaultListenAndServeWebsocket
 func DefaultListenAndServeWebsocket() error {
 	if err := AddWebsocketHandler("/mqtt", "test.mosquitto.org:1883"); err != nil {
 		return err
@@ -17,7 +17,7 @@ func DefaultListenAndServeWebsocket() error {
 	return ListenAndServeWebsocket(":1234")
 }
 
-//AddWebsocketHandler AddWebsocketHandler
+// AddWebsocketHandler AddWebsocketHandler
 func AddWebsocketHandler(urlPattern string, uri string) error {
 
 	u, err := url.Parse(uri)
@@ -27,24 +27,27 @@ func AddWebsocketHandler(urlPattern string, uri string) error {
 	}
 
 	h := func(ws *websocket.Conn) {
-		WebsocketTcpProxy(ws, u.Scheme, u.Host)
+		err := WebsocketTcpProxy(ws, u.Scheme, u.Host)
+		if err != nil {
+			return
+		}
 	}
 	http.Handle(urlPattern, websocket.Handler(h))
 	return nil
 }
 
-//ListenAndServeWebsocket start a listener that proxies websocket <-> tcp
+// ListenAndServeWebsocket start a listener that proxies websocket <-> tcp
 func ListenAndServeWebsocket(addr string) error {
 	return http.ListenAndServe(addr, nil)
 }
 
-//ListenAndServeWebsocketSecure starts an HTTPS listener
+// ListenAndServeWebsocketSecure starts an HTTPS listener
 func ListenAndServeWebsocketSecure(addr string, cert string, key string) error {
 	return http.ListenAndServeTLS(addr, cert, key, nil)
 }
 
-// io_copy_ws copy from websocket to writer, this copies the binary frames as is
-func io_copy_ws(src *websocket.Conn, dst io.Writer) (int, error) {
+// ioCopyWs copy from websocket to writer, this copies the binary frames as is
+func ioCopyWs(src *websocket.Conn, dst io.Writer) (int, error) {
 	var buffer []byte
 	count := 0
 	for {
@@ -59,11 +62,10 @@ func io_copy_ws(src *websocket.Conn, dst io.Writer) (int, error) {
 			return count, err
 		}
 	}
-	return count, nil
 }
 
-//io_ws_copy copy from reader to websocket, this copies the binary frames as is
-func io_ws_copy(src io.Reader, dst *websocket.Conn) (int, error) {
+// ioWsCopy copy from reader to websocket, this copies the binary frames as is
+func ioWsCopy(src io.Reader, dst *websocket.Conn) (int, error) {
 	buffer := make([]byte, 2048)
 	count := 0
 	for {
@@ -77,25 +79,28 @@ func io_ws_copy(src io.Reader, dst *websocket.Conn) (int, error) {
 			return count, err
 		}
 	}
-	return count, nil
 }
 
-//WebsocketTcpProxy handler that proxies websocket <-> unix domain socket
+// WebsocketTcpProxy handler that proxies websocket <-> unix domain socket
 func WebsocketTcpProxy(ws *websocket.Conn, nettype string, host string) error {
 	client, err := net.Dial(nettype, host)
 	if err != nil {
 		return err
 	}
-	defer client.Close()
-	defer ws.Close()
+	defer func(client net.Conn) {
+		_ = client.Close()
+	}(client)
+	defer func(ws *websocket.Conn) {
+		_ = ws.Close()
+	}(ws)
 	chDone := make(chan bool)
 
 	go func() {
-		io_ws_copy(client, ws)
+		_, _ = ioWsCopy(client, ws)
 		chDone <- true
 	}()
 	go func() {
-		io_copy_ws(ws, client)
+		_, _ = ioCopyWs(ws, client)
 		chDone <- true
 	}()
 	<-chDone

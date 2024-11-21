@@ -2,9 +2,11 @@ package utils
 
 import (
 	"bufio"
+	"database/sql"
 	"fmt"
-	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/postgres"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 	"strings"
 )
 
@@ -12,19 +14,17 @@ var FindColumnsSql = `
 SELECT
     a.attnum AS column_number,
     a.attname AS column_name,
-    --format_type(a.atttypid, a.atttypmod) AS column_type,
     a.attnotnull AS not_null,
     COALESCE(pg_get_expr(ad.adbin, ad.adrelid), '') AS default_value,
-    COALESCE(ct.contype = 'p', false) AS  is_primary_key,
+    COALESCE(ct.contype = 'p', false) AS is_primary_key,
     CASE
         WHEN a.atttypid = ANY ('{int,int8,int2}'::regtype[])
           AND EXISTS (
              SELECT 1 FROM pg_attrdef ad
              WHERE  ad.adrelid = a.attrelid
              AND    ad.adnum   = a.attnum
-             AND    ad.adsrc = 'nextval('''
-                || (pg_get_serial_sequence (a.attrelid::regclass::text
-                                          , a.attname))::regclass
+             AND    pg_get_expr(ad.adbin, ad.adrelid) = 'nextval('''
+                || pg_get_serial_sequence(a.attrelid::regclass::text, a.attname)
                 || '''::regclass)'
              )
             THEN CASE a.atttypid
@@ -37,8 +37,8 @@ SELECT
         ELSE format_type(a.atttypid, a.atttypmod)
     END AS column_type
 FROM pg_attribute a
-JOIN ONLY pg_class c ON c.oid = a.attrelid
-JOIN ONLY pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_class c ON c.oid = a.attrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
 LEFT JOIN pg_constraint ct ON ct.conrelid = c.oid
 AND a.attnum = ANY(ct.conkey) AND ct.contype = 'p'
 LEFT JOIN pg_attrdef ad ON ad.adrelid = c.oid AND ad.adnum = a.attnum
@@ -46,7 +46,8 @@ WHERE a.attisdropped = false
 AND n.nspname = 'public'
 AND c.relname = ?
 AND a.attnum > 0
-ORDER BY a.attnum
+ORDER BY a.attnum;
+
 `
 var findTablesSql = `
 SELECT
@@ -68,43 +69,61 @@ type Column struct {
 	ColumnType   string `gorm:"column_type"`   // column_type
 }
 
-// dataSource = fmt.Sprintf("host=%s port=%s user=%s dbname=%s sslmode=%s password=%s","localhost", "5432", "postgres", "test", "disable", "123")
+// FindTables 根据数据源查询表
 func FindTables(dataSource string) []Table {
 	defer func() {
 		if e := recover(); e != nil {
 			fmt.Println(fmt.Sprintf("recover from a fatal error : %v", e))
 		}
 	}()
-	db, err := gorm.Open("postgres", dataSource)
-	db.SingularTable(true)
-	db.LogMode(true)
+	db, err := gorm.Open(postgres.Open(dataSource), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Error),
+	})
 	if err != nil {
 		panic(err)
+	}
+	sqlDB, err := db.DB()
+	if err == nil {
+		defer func(sqlDB *sql.DB) {
+			err := sqlDB.Close()
+			if err != nil {
+				fmt.Println(fmt.Sprintf("sqlDB close error : %v", err))
+			}
+		}(sqlDB)
 	}
 	var tables = make([]Table, 0, 10)
 	db.Raw(findTablesSql).Find(&tables)
 	return tables
 }
 
-// find columns' property by specific dataSource and table name
+// FindColumns 根据数据源和表名查询字段
 func FindColumns(dataSource string, tableName string) []Column {
 	defer func() {
 		if e := recover(); e != nil {
 			fmt.Println(fmt.Sprintf("recover from a fatal error : %v", e))
 		}
 	}()
-	db, err := gorm.Open("postgres", dataSource)
-	db.SingularTable(true)
-	db.LogMode(true)
+	db, err := gorm.Open(postgres.Open(dataSource), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Error),
+	})
 	if err != nil {
 		panic(err)
+	}
+	sqlDB, err := db.DB()
+	if err == nil {
+		defer func(sqlDB *sql.DB) {
+			err := sqlDB.Close()
+			if err != nil {
+				fmt.Println(fmt.Sprintf("sqlDB close error : %v", err))
+			}
+		}(sqlDB)
 	}
 	var columns = make([]Column, 0, 10)
 	db.Raw(FindColumnsSql, tableName).Find(&columns)
 	return columns
 }
 
-// generate go model y specific the dataSource and table name
+// TableToStruct 根据数据源和表名生成结构体
 func TableToStruct(dataSource string, tableName string) string {
 
 	columnString := ""
@@ -204,7 +223,7 @@ func HumpToUnderLine(s string) string {
 func UnderLineToHump(s string) string {
 	arr := strings.Split(s, "_")
 	for i, v := range arr {
-		arr[i] = strings.ToUpper(string(v[0])) + string(v[1:])
+		arr[i] = strings.ToUpper(string(v[0])) + v[1:]
 	}
 	return strings.Join(arr, "")
 }
@@ -245,18 +264,18 @@ func in(s string, arr []string) bool {
 }
 
 func main() {
-	dataSouce := fmt.Sprintf("host=112.16.6.211 user=soeuser port=9999 dbname=soedaturadb sslmode=disable password=soesoft application_name=syspara-rest")
+	dataSource := fmt.Sprintf("host=192.168.1.208 port=31209 user=soeuser dbname=smartconfigdb sslmode=disable password=soesoft application_name=z9-config-service")
 	// 获取指定数据库内所有的表名
-	tables := FindTables(dataSouce)
+	tables := FindTables(dataSource)
 	fmt.Println(tables)
 
 	// 获取指定数据库指定表内所有的列属性
-	tableName := "member_info"
-	columns := FindColumns(dataSouce, tableName)
+	tableName := "smart_irc_codes"
+	columns := FindColumns(dataSource, tableName)
 	fmt.Println(columns)
 
 	// 指定数据源和表，生成go结构体
-	goModel := TableToStruct(dataSouce, tableName)
+	goModel := TableToStruct(dataSource, tableName)
 	fmt.Println(goModel)
 	// 生成带tag的结构体
 	goModelWithTag := AddJSONFormGormTag(goModel)

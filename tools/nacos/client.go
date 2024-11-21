@@ -23,14 +23,14 @@ type Client struct {
 	secretKey    string
 }
 
-//通知回调
+// 通知回调
 type OnChange func(content, dataID string)
 
 var NacosClient *Client
 
 func NewNacosClient(nodes []string, config Config) (err error) {
 	var configClient config_client.IConfigClient
-	servers := []constant.ServerConfig{}
+	var servers []constant.ServerConfig
 	for _, key := range nodes {
 		nacosUrl, _ := url.Parse(key)
 
@@ -45,13 +45,12 @@ func NewNacosClient(nodes []string, config Config) (err error) {
 		config.Group = "DEFAULT_GROUP"
 	}
 
-	fmt.Println(fmt.Sprintf("endpoint=%s, namespace=%s, group=%s, accessKey=%s, secretKey=%s, openKMS=%d, regionId=%s", config.Endpoint, config.Namespace, config.Group, config.AccessKey, config.SecretKey, config.OpenKMS, config.RegionId))
+	fmt.Println(fmt.Sprintf("endpoint=%s, namespace=%s, group=%s, accessKey=%s, secretKey=%s, openKMS=%v, regionId=%s", config.Endpoint, config.Namespace, config.Group, config.AccessKey, config.SecretKey, config.OpenKMS, config.RegionId))
 
 	configClient, err = clients.CreateConfigClient(map[string]interface{}{
 		"serverConfigs": servers,
 		"clientConfig": constant.ClientConfig{
 			TimeoutMs:           10000,
-			ListenInterval:      20000,
 			NotLoadCacheAtStart: true,
 			NamespaceId:         config.Namespace,
 			AccessKey:           config.AccessKey,
@@ -66,7 +65,6 @@ func NewNacosClient(nodes []string, config Config) (err error) {
 		"serverConfigs": servers,
 		"clientConfig": constant.ClientConfig{
 			TimeoutMs:           10000,
-			ListenInterval:      20000,
 			NotLoadCacheAtStart: true,
 			NamespaceId:         config.Namespace,
 			AccessKey:           config.AccessKey,
@@ -88,7 +86,7 @@ func (client *Client) GetValues(keys []string) (map[string]string, error) {
 				//HealthyOnly: true,
 			})
 
-			fmt.Println(fmt.Sprintf("key=%s, value=%s", key, instances))
+			fmt.Println(fmt.Sprintf("key=%s, value=%v", key, instances))
 			if err == nil {
 				vars[key] = util.ToJsonString(instances)
 			}
@@ -113,7 +111,7 @@ func (client *Client) GetValues(keys []string) (map[string]string, error) {
 func (client *Client) WatchPrefix(keys []string, call OnChange) error {
 	for _, key := range keys {
 		if strings.HasPrefix(key, "naming.") {
-			client.namingClient.Subscribe(&vo.SubscribeParam{
+			_ = client.namingClient.Subscribe(&vo.SubscribeParam{
 				ServiceName: key,
 				GroupName:   client.group,
 				SubscribeCallback: func(services []model.SubscribeService, err error) {
