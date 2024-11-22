@@ -3,7 +3,7 @@ module github.com/soedev/soelib
 go 1.22.7
 
 require (
-	github.com/Lofanmi/pinyin-golang v0.0.0-20180808030053-30cdbfc8c2de
+	github.com/Lofanmi/pinyin-golang v0.0.0-20211114132645-1db892057f20
 	github.com/Shopify/sarama v1.19.0
 	github.com/afex/hystrix-go v0.0.0-20180502004556-fa1af6a1f4f5
 	github.com/alex023/clock v0.0.0-20191208111215-c265f1b2ab18
@@ -44,6 +44,7 @@ require (
 )
 
 replace google.golang.org/genproto => google.golang.org/genproto v0.0.0-20241118233622-e639e219e697
+
 // 使用本地sqlserver驱动代码： 本地代码自定义修改过，为了解决CREATE生成脚本问题
 replace gorm.io/driver/sqlserver => ./pkg/sqlserver
 
@@ -109,7 +110,6 @@ require (
 	golang.org/x/arch v0.3.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
-	golang.org/x/tools v0.22.0 // indirect
 	gopkg.in/ini.v1 v1.51.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
