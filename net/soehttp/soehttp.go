@@ -10,30 +10,33 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/mitchellh/mapstructure"
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
-	"github.com/soedev/soelib/common/soelog"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"reflect"
+	"strconv"
 	"time"
+
+	"github.com/mitchellh/mapstructure"
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
+	"github.com/soedev/soelib/common/soelog"
 
 	"github.com/afex/hystrix-go/hystrix"
 	"github.com/gin-gonic/gin"
 	"github.com/soedev/soelib/common/utils"
 )
 
-//SoeRemoteService 在线服务
+// SoeRemoteService 在线服务
 type SoeRemoteService struct {
 	URL                string
 	Token              string
 	TenantID, ShopCode string //门店信息
 	Context            *gin.Context
+	TimeOutSecond      string //超时时间,默认15秒
 }
 
-//SoeRestAPIException 异常
+// SoeRestAPIException 异常
 type SoeRestAPIException struct {
 	Error     string `json:"error"`
 	Exception string `json:"exception"`
@@ -42,14 +45,14 @@ type SoeRestAPIException struct {
 	Data      string `json:"data"`
 }
 
-//SoeGoResponseVO go返回数据
+// SoeGoResponseVO go返回数据
 type SoeGoResponseVO struct {
 	Code int         `json:"code"`
 	Data interface{} `json:"data"`
 	Msg  string      `json:"msg"`
 }
 
-//告警配置
+// 告警配置
 type AlarmConfig struct {
 	SendErrorToWx bool   //发送微信告警
 	ChatID        string //微信群id
@@ -71,7 +74,7 @@ const (
 	remoteDel  = "RemoteDELETE"
 )
 
-//初始化http 配置信息
+// 初始化http 配置信息
 func InitConfig(config SoeHTTPConfig) {
 	alarm = config.Alarm
 	hystrix.ConfigureCommand(remotePost, config.Hystrix)
@@ -90,6 +93,14 @@ func Remote(url string, args ...string) *SoeRemoteService {
 		soeRemoteService.Token = args[0]
 		soeRemoteService.TenantID = args[1]
 		soeRemoteService.ShopCode = args[2]
+	case 4:
+		soeRemoteService.Token = args[0]
+		soeRemoteService.TenantID = args[1]
+		soeRemoteService.ShopCode = args[2]
+		soeRemoteService.TimeOutSecond = args[3]
+		if soeRemoteService.TimeOutSecond == "" {
+			soeRemoteService.TimeOutSecond = "15"
+		}
 	}
 	return &soeRemoteService
 }
@@ -118,7 +129,7 @@ func (soeRemoteService *SoeRemoteService) NewPost(postBody *[]byte) ([]byte, err
 	return soeRemoteService.NewDo(req, "RemotePost")
 }
 
-//get  get 请求
+// get  get 请求
 func (soeRemoteService *SoeRemoteService) NewGet(newReader io.Reader) ([]byte, error) {
 	req, err := http.NewRequest("GET", soeRemoteService.URL, newReader)
 	if err != nil {
@@ -127,7 +138,7 @@ func (soeRemoteService *SoeRemoteService) NewGet(newReader io.Reader) ([]byte, e
 	return soeRemoteService.NewDo(req, "RemoteGET")
 }
 
-//NewPost 不加入熔断检测
+// NewPost 不加入熔断检测
 func (soeRemoteService *SoeRemoteService) Post(postBody *[]byte) ([]byte, error) {
 	req, err := http.NewRequest("POST", soeRemoteService.URL, bytes.NewReader(*postBody))
 	if err != nil {
@@ -136,7 +147,7 @@ func (soeRemoteService *SoeRemoteService) Post(postBody *[]byte) ([]byte, error)
 	return soeRemoteService.NewDo(req, "RemotePost")
 }
 
-//NewGet 不加入熔断检测
+// NewGet 不加入熔断检测
 func (soeRemoteService *SoeRemoteService) Get(newReader io.Reader) ([]byte, error) {
 	req, err := http.NewRequest("GET", soeRemoteService.URL, newReader)
 	if err != nil {
@@ -302,7 +313,7 @@ func (soeRemoteService *SoeRemoteService) do(req *http.Request, operationName st
 	}
 }
 
-//NewDo 去除熔断检测
+// NewDo 去除熔断检测
 func (soeRemoteService *SoeRemoteService) NewDo(req *http.Request, operationName string) (result []byte, err error) {
 	tr := &http.Transport{ //解决x509: certificate signed by unknown authority
 		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
@@ -311,6 +322,12 @@ func (soeRemoteService *SoeRemoteService) NewDo(req *http.Request, operationName
 	client := &http.Client{
 		Timeout:   15 * time.Second,
 		Transport: tr, //解决x509: certificate signed by unknown authority
+	}
+	if soeRemoteService.TimeOutSecond != "" {
+		timeOutSecond, _ := strconv.Atoi(soeRemoteService.TimeOutSecond)
+		if timeOutSecond > 0 {
+			client.Timeout = time.Duration(timeOutSecond) * time.Second
+		}
 	}
 	req.Header.Add("Content-Type", "application/json;charset=utf-8")
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
@@ -438,7 +455,7 @@ func (soeRemoteService *SoeRemoteService) checkTracer(req *http.Request, operati
 // 	return result, err
 // }
 
-//错误解析
+// 错误解析
 func (soeRemoteService *SoeRemoteService) handleError(resp *http.Response) (err error) {
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
 		err = errors.New(http.StatusText(resp.StatusCode))

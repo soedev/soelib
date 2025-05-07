@@ -8,8 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gomodule/redigo/redis"
 	"time"
+
+	"github.com/gomodule/redigo/redis"
 )
 
 // RedisConfig 连接配置
@@ -144,7 +145,7 @@ func (s *RedisTemplate) Get(key string) ([]byte, error) {
 		}
 	}(conn)
 	reply, err := redis.Bytes(conn.Do("GET", key))
-	if err != nil {
+	if err != nil && err != redis.ErrNil {
 		fmt.Printf("------------RedisTemplate: Get err:%v------------", err)
 		return nil, err
 	}
