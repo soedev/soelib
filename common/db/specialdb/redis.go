@@ -145,8 +145,10 @@ func (s *RedisTemplate) Get(key string) ([]byte, error) {
 		}
 	}(conn)
 	reply, err := redis.Bytes(conn.Do("GET", key))
-	if err != nil && err != redis.ErrNil {
-		fmt.Printf("------------RedisTemplate: Get err:%v------------", err)
+	if err != nil {
+		if !errors.Is(err, redis.ErrNil) {
+			fmt.Printf("------------RedisTemplate: Get err:%v------------", err)
+		}
 		return nil, err
 	}
 	return reply, nil
