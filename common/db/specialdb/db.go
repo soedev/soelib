@@ -6,6 +6,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
+	"gorm.io/plugin/opentelemetry/tracing"
 	"regexp"
 	"time"
 )
@@ -17,6 +18,7 @@ type DbConfig struct {
 	MaxIdleConns    int
 	MaxOpenConns    int
 	ConnMaxLifetime time.Duration
+	EnableTrace     bool
 }
 
 // ConnDB 根据索易配置信息连接数据库
@@ -51,6 +53,14 @@ func ConnDB(config DbConfig) (*gorm.DB, error) {
 	if err != nil {
 		return nil, errors.New("数据库连接失败:" + err.Error())
 	}
+
+	// 启用链路追踪插件
+	if config.EnableTrace {
+		if err = db.Use(tracing.NewPlugin()); err != nil {
+			return nil, errors.New("启用链路失败:" + err.Error())
+		}
+	}
+
 	// 3. 设置数据库连接池
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -59,6 +69,7 @@ func ConnDB(config DbConfig) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(config.MaxIdleConns)       // 设置最大空闲连接数
 	sqlDB.SetMaxOpenConns(config.MaxOpenConns)       // 设置最大连接数
 	sqlDB.SetConnMaxLifetime(config.ConnMaxLifetime) // 设置连接最大生命周期
+
 	return db, nil
 }
 

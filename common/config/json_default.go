@@ -30,7 +30,7 @@ const (
 type JsonConfig struct {
 	MongoConfig   specialdb.MongoConfig //mogo 数据库连接配置
 	RedisConfig   specialdb.RedisConfig //redis 连接配置
-	TraceConfig   soetrace.JaegerTracerConfig
+	TraceConfig   soetrace.OtelTracerConfig
 	HTTPConfig    soehttp.SoeHTTPConfig
 	TCP           soetcp.TcpConfig //小索辅助配置
 	MQTT          emqttConfig      //MQTT通讯配置
@@ -41,17 +41,17 @@ type JsonConfig struct {
 	Kafka         kafka
 	SlowInterface slowInterface
 	Rabbit        Rabbit
-	AliRabbit        Rabbit
+	AliRabbit     Rabbit
 	AcmConfig     nacos.AcmConfig
 }
 
-//emqtt  服务端以及客户端配置
+// emqtt  服务端以及客户端配置
 type emqttConfig struct {
 	Client emqtt.ClientConfig
 	Server emqtt.ServerConfig
 }
 
-//考勤机配置
+// 考勤机配置
 type attConfig struct {
 	Delay      int //延迟
 	ErrorDelay int
@@ -59,7 +59,7 @@ type attConfig struct {
 	Realtime   int
 }
 
-//来电显示盒子配置
+// 来电显示盒子配置
 type callerConfig struct {
 	LineCount int  //来电路数
 	Enable    bool //是否开启来电显示
@@ -78,7 +78,7 @@ type Rabbit struct {
 	Port     int
 	Username string
 	Password string
-	Vhost string
+	Vhost    string
 }
 type RabbitConsumerInfo struct {
 	//交换机
@@ -89,7 +89,7 @@ type RabbitConsumerInfo struct {
 	ExchangeType string
 }
 
-//JsonConfig 配置信息
+// JsonConfig 配置信息
 var Config JsonConfig
 
 // 加载配置文件
@@ -107,7 +107,7 @@ func LoadConfig(configFile string) {
 	Config.Check()
 }
 
-//配置默认值检测
+// 配置默认值检测
 func (s *JsonConfig) Check() {
 	if s.TCP.Host == "" {
 		s.TCP.Host = "127.0.0.1"
@@ -144,20 +144,13 @@ func (s *JsonConfig) Check() {
 		s.MQTT.Server.WssAddr = "18081"
 	}
 
-	//密码密文信息处理
-	if s.RedisConfig.Password != "" {
-		s.RedisConfig.Password = des.DecryptDESECB([]byte(s.RedisConfig.Password), des.DesKey)
-	}
-	if s.MongoConfig.Password != "" {
-		s.MongoConfig.Password = des.DecryptDESECB([]byte(s.MongoConfig.Password), des.DesKey)
+	if s.MongoConfig.PoolLimit <= 0 || s.MongoConfig.PoolLimit > 4096 {
+		s.MongoConfig.PoolLimit = 100
 	}
 
-	//全链路跟踪默认值配置
-	if s.TraceConfig.Config.Sampler.Type == "" {
-		s.TraceConfig.Config.Sampler.Type = "const" //固定采样
-	}
-	if s.TraceConfig.Config.Sampler.Param == 0 {
-		s.TraceConfig.Config.Sampler.Param = 1 //全采样
+	//全链路跟踪默认值配置： 采样率检测
+	if s.TraceConfig.SamplingRatio <= 0 || s.TraceConfig.SamplingRatio > 1 {
+		s.TraceConfig.SamplingRatio = 0.1
 	}
 
 	//HTTP 默认值配置 熔断默认配置
@@ -199,7 +192,7 @@ func (s *JsonConfig) Check() {
 	}
 }
 
-//GetAcmConfig 获取acm相关连接
+// GetAcmConfig 获取acm相关连接
 func GetAcmConfig(dataID string, groupID string, config *JsonConfig) error {
 	if nacos.AcmClient == nil {
 		return errors.New("acm连接失败")

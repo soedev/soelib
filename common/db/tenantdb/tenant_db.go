@@ -12,6 +12,7 @@ import (
 	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"gorm.io/plugin/opentelemetry/tracing"
 	"log"
 	"sync"
 	"time"
@@ -80,6 +81,9 @@ func getSQLDbWithOpt(tenantID string, crmDB *gorm.DB, opt *OptSQL, enable bool) 
 		sqlDb, err = gorm.Open(postgres.Open(dbInfo), &opt.DBConfig)
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := sqlDb.Use(tracing.NewPlugin()); err != nil {
 		return nil, err
 	}
 	if tenantDataSource.MaxPoolSize == 0 {
