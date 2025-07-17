@@ -78,21 +78,14 @@ func ConnRedis(config RedisConfig) (*RedisTemplate, error) {
 func (s *RedisTemplate) GetAndRenew(key string, exTime int, ctx context.Context) (value []byte, err error) {
 	conn := s.Pool.Get()
 	defer safeClose(conn, "GetAndRenew")
-	getArgs := []interface{}{key}
-	if s.EnableTrace {
-		getArgs = append(getArgs, ctx)
-	}
-	reply, err := redis.Bytes(conn.Do("GET", getArgs...))
+
+	reply, err := redis.Bytes(conn.Do("GET", s.buildArgs(ctx, []interface{}{key})...))
 	if err != nil {
 		fmt.Printf("------------RedisTemplate: GetAndRenew GET:err:%v------------\n", err)
 		return nil, err
 	}
 
-	expireArgs := []interface{}{key, exTime}
-	if s.EnableTrace {
-		expireArgs = append(expireArgs, ctx)
-	}
-	_, err = conn.Do("EXPIRE", expireArgs...)
+	_, err = conn.Do("EXPIRE", s.buildArgs(ctx, []interface{}{key, exTime})...)
 
 	if err != nil {
 		fmt.Printf("------------RedisTemplate: GetAndRenew EXPIRE:err:%v------------\n", err)
@@ -104,11 +97,7 @@ func (s *RedisTemplate) GetAndRenew(key string, exTime int, ctx context.Context)
 func (s *RedisTemplate) Renew(key string, exTime int, ctx context.Context) error {
 	conn := s.Pool.Get()
 	defer safeClose(conn, "Renew")
-	expireArgs := []interface{}{key, exTime}
-	if s.EnableTrace {
-		expireArgs = append(expireArgs, ctx)
-	}
-	_, err := conn.Do("EXPIRE", expireArgs...)
+	_, err := conn.Do("EXPIRE", s.buildArgs(ctx, []interface{}{key, exTime})...)
 	if err != nil {
 		fmt.Printf("------------RedisTemplate: Renew EXPIRE:err:%v------------\n", err)
 		return err
@@ -126,9 +115,7 @@ func (s *RedisTemplate) SetString(key string, data string, times int, ctx contex
 	} else {
 		args = []interface{}{key, data, "EX", times}
 	}
-	if s.EnableTrace {
-		args = append(args, ctx)
-	}
+	args = s.buildArgs(ctx, args)
 	_, err := conn.Do("SET", args...)
 	return err
 }
@@ -147,10 +134,7 @@ func (s *RedisTemplate) Set(key string, data interface{}, time int, ctx context.
 	} else {
 		args = []interface{}{key, value, "EX", time}
 	}
-	if s.EnableTrace {
-		args = append(args, ctx)
-	}
-	_, err = conn.Do("SET", args...)
+	_, err = conn.Do("SET", s.buildArgs(ctx, args)...)
 	if err != nil {
 		fmt.Printf("------------RedisTemplate: Set err:%v------------\n", err)
 		return err
@@ -162,13 +146,7 @@ func (s *RedisTemplate) Set(key string, data interface{}, time int, ctx context.
 func (s *RedisTemplate) Exists(key string, ctx context.Context) bool {
 	conn := s.Pool.Get()
 	defer safeClose(conn, "Exists")
-
-	existsArgs := []interface{}{key}
-	if s.EnableTrace {
-		existsArgs = append(existsArgs, ctx)
-	}
-
-	exists, err := redis.Bool(conn.Do("EXISTS", existsArgs...))
+	exists, err := redis.Bool(conn.Do("EXISTS", s.buildArgs(ctx, []interface{}{key})...))
 	if err != nil {
 		fmt.Printf("------------RedisTemplate: Exists err:%v------------\n", err)
 		return false
@@ -180,13 +158,7 @@ func (s *RedisTemplate) Exists(key string, ctx context.Context) bool {
 func (s *RedisTemplate) Get(key string, ctx context.Context) ([]byte, error) {
 	conn := s.Pool.Get()
 	defer safeClose(conn, "Get")
-
-	getArgs := []interface{}{key}
-	if s.EnableTrace {
-		getArgs = append(getArgs, ctx)
-	}
-
-	reply, err := redis.Bytes(conn.Do("GET", getArgs...))
+	reply, err := redis.Bytes(conn.Do("GET", s.buildArgs(ctx, []interface{}{key})...))
 	if err != nil {
 		if !errors.Is(err, redis.ErrNil) {
 			fmt.Printf("------------RedisTemplate: Get err:%v------------\n", err)
@@ -199,27 +171,15 @@ func (s *RedisTemplate) Get(key string, ctx context.Context) ([]byte, error) {
 // Delete 删除缓存数据
 func (s *RedisTemplate) Delete(key string, ctx context.Context) (bool, error) {
 	conn := s.Pool.Get()
-	defer safeClose(conn, "Get")
-
-	delArgs := []interface{}{key}
-	if s.EnableTrace {
-		delArgs = append(delArgs, ctx)
-	}
-
-	return redis.Bool(conn.Do("DEL", delArgs...))
+	defer safeClose(conn, "Delete")
+	return redis.Bool(conn.Do("DEL", s.buildArgs(ctx, []interface{}{key})...))
 }
 
 // LikeDeletes  like 删除
 func (s *RedisTemplate) LikeDeletes(key string, ctx context.Context) error {
 	conn := s.Pool.Get()
 	defer safeClose(conn, "LikeDeletes")
-
-	keysArgs := []interface{}{"*" + key + "*"}
-	if s.EnableTrace {
-		keysArgs = append(keysArgs, ctx)
-	}
-
-	keys, err := redis.Strings(conn.Do("KEYS", keysArgs...))
+	keys, err := redis.Strings(conn.Do("KEYS", s.buildArgs(ctx, []interface{}{"*" + key + "*"})...))
 	if err != nil {
 		fmt.Printf("------------RedisTemplate: LikeDeletes KEYS:err:%v------------\n", err)
 		return err
@@ -239,14 +199,8 @@ func (s *RedisTemplate) LikeDeletes(key string, ctx context.Context) error {
 func (s *RedisTemplate) Lock(lock, value string, expire int, ctx context.Context) (ok bool, err error) {
 	conn := s.Pool.Get()
 	defer safeClose(conn, "Lock")
-
-	setArgs := []interface{}{lock, value, "EX", expire, "NX"}
-	if s.EnableTrace {
-		setArgs = append(setArgs, ctx)
-	}
-
 	//设置锁key-value和过期时间
-	_, err = redis.String(conn.Do("SET", setArgs...))
+	_, err = redis.String(conn.Do("SET", s.buildArgs(ctx, []interface{}{lock, value, "EX", expire, "NX"})...))
 	if err != nil {
 		if errors.Is(err, redis.ErrNil) {
 			return false, nil
@@ -312,12 +266,7 @@ func (s *RedisTemplate) Incr(key string, ctx context.Context) (result int, err e
 	conn := s.Pool.Get()
 	defer safeClose(conn, "Incr")
 
-	incrArgs := []interface{}{key}
-	if s.EnableTrace {
-		incrArgs = append(incrArgs, ctx)
-	}
-
-	result, err = redis.Int(conn.Do("INCR", incrArgs...))
+	result, err = redis.Int(conn.Do("INCR", s.buildArgs(ctx, []interface{}{key})...))
 	if err != nil {
 		fmt.Printf("------------RedisTemplate: Incr INCR:err:%v------------\n", err)
 		return result, err
@@ -329,13 +278,7 @@ func (s *RedisTemplate) Incr(key string, ctx context.Context) (result int, err e
 func (s *RedisTemplate) HasGetAll(hasKey string, ctx context.Context) ([][]byte, error) {
 	conn := s.Pool.Get()
 	defer safeClose(conn, "HasGetAll")
-
-	getAllArgs := []interface{}{hasKey}
-	if s.EnableTrace {
-		getAllArgs = append(getAllArgs, ctx)
-	}
-
-	reply, err := redis.Values(conn.Do("HGETALL", getAllArgs...))
+	reply, err := redis.Values(conn.Do("HGETALL", s.buildArgs(ctx, []interface{}{hasKey})...))
 	if err != nil {
 		return nil, err
 	}
@@ -355,12 +298,19 @@ func (s *RedisTemplate) EvalLuaScript(script string, keys []string, args []inter
 		redisArgs = append(redisArgs, k)
 	}
 	redisArgs = append(redisArgs, args...)
-
-	// 添加 ctx（用于 trace）
-	if s.EnableTrace {
-		redisArgs = append(redisArgs, ctx)
-	}
+	redisArgs = s.buildArgs(ctx, redisArgs)
 	return conn.Do("EVAL", redisArgs...)
+}
+
+func (s *RedisTemplate) buildArgs(ctx context.Context, args []interface{}) []interface{} {
+	if !s.EnableTrace {
+		return args
+	}
+	// 统一处理无效上下文
+	if ctx == nil || ctx.Err() != nil {
+		ctx = context.Background()
+	}
+	return append(args, ctx)
 }
 
 func redisHGETALLToMap(values []interface{}) ([][]byte, error) {

@@ -39,7 +39,7 @@ func TestSoeRemoteService_PostEntity(t *testing.T) {
 	defer server.Close()
 
 	// 创建 remote service 实例
-	remote := Remote(server.URL)
+	remote := NewRemote(RemoteOption{URL: server.URL})
 
 	// 构造请求体
 	input := MockRequest{Name: "Luchuang", Age: 18}
@@ -77,7 +77,7 @@ func TestSoeRemoteService_Get(t *testing.T) {
 	}))
 	defer server.Close()
 
-	remote := Remote(server.URL)
+	remote := NewRemote(RemoteOption{URL: server.URL})
 	respBody, err := remote.Get(nil)
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)

@@ -33,7 +33,7 @@ func NewRest(url string) *AuthServiceClient {
 func (s *AuthServiceClient) AwardedToken(in *pb.AwardResponse) (*pb.AwardReplyResponse, error) {
 	url := s.RestUrl + "/api/token/award"
 	var res AwardedTokenRes
-	err := soehttp.Remote(url).PostEntity(in, &res)
+	err := soehttp.NewRemote(soehttp.RemoteOption{URL: url}).PostEntity(in, &res)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("调用颁发平台token服务发生异常: %s ", err.Error()))
 	}
@@ -46,7 +46,7 @@ func (s *AuthServiceClient) AwardedToken(in *pb.AwardResponse) (*pb.AwardReplyRe
 func (s *AuthServiceClient) RefreshToken(in *pb.AuthResponse) (*pb.ReplyResponse, error) {
 	url := s.RestUrl + "/api/token/refresh"
 	var res AuthResponse
-	err := soehttp.Remote(url).PostEntity(in, &res)
+	err := soehttp.NewRemote(soehttp.RemoteOption{URL: url}).PostEntity(in, &res)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("刷新accessToken发生异常: %s ", err.Error()))
 	}
@@ -59,7 +59,7 @@ func (s *AuthServiceClient) RefreshToken(in *pb.AuthResponse) (*pb.ReplyResponse
 func (s *AuthServiceClient) AuthToken(in *pb.AuthResponse) (*pb.ReplyResponse, error) {
 	url := s.RestUrl + "/api/token/auth"
 	var res AuthResponse
-	err := soehttp.Remote(url).PostEntity(in, &res)
+	err := soehttp.NewRemote(soehttp.RemoteOption{URL: url}).PostEntity(in, &res)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("调用鉴权服务发生异常: %s ", err.Error()))
 	}
@@ -72,7 +72,7 @@ func (s *AuthServiceClient) AuthToken(in *pb.AuthResponse) (*pb.ReplyResponse, e
 func (s *AuthServiceClient) AuthTokenResultModel(in *pb.AuthResponse) (*pb.ResultModelResponse, error) {
 	url := s.RestUrl + "/api/token/auth/result-model"
 	var res AuthTokenResultModelRes
-	err := soehttp.Remote(url).PostEntity(in, &res)
+	err := soehttp.NewRemote(soehttp.RemoteOption{URL: url}).PostEntity(in, &res)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("调用鉴权服务发生异常: %s ", err.Error()))
 	}

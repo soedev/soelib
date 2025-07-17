@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/soedev/soelib/common/config"
 	"github.com/soedev/soelib/common/des"
 	"github.com/soedev/soelib/common/keylock"
 	"github.com/soedev/soelib/common/soelog"
@@ -83,8 +84,10 @@ func getSQLDbWithOpt(tenantID string, crmDB *gorm.DB, opt *OptSQL, enable bool) 
 	if err != nil {
 		return nil, err
 	}
-	if err := sqlDb.Use(tracing.NewPlugin()); err != nil {
-		return nil, err
+	if config.Config.TraceConfig.Enable {
+		if err := sqlDb.Use(tracing.NewPlugin()); err != nil {
+			return nil, err
+		}
 	}
 	if tenantDataSource.MaxPoolSize == 0 {
 		tenantDataSource.MaxPoolSize = 10

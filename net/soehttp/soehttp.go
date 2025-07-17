@@ -24,14 +24,34 @@ import (
 	"github.com/soedev/soelib/common/utils"
 )
 
-// SoeRemoteService 在线服务
-type SoeRemoteService struct {
-	URL                string
-	Token              string
-	TenantID, ShopCode string //门店信息
-	Context            context.Context
-	TimeOutSecond      string //超时时间,默认15秒
-	Client             *http.Client
+type SoeRemoteService interface {
+	Post(postBody *[]byte) ([]byte, error)
+	Get(newReader io.Reader) ([]byte, error)
+	PostEntity(v interface{}, r interface{}) error
+	GetEntity(v interface{}) error
+	Delete(newReader io.Reader) ([]byte, error)
+	DeleteEntity(v interface{}) error
+	WithClient(client *http.Client) SoeRemoteService
+}
+
+// RemoteOption 请求参数配置
+type RemoteOption struct {
+	URL           string
+	Token         string
+	TenantID      string
+	ShopCode      string
+	TimeoutSecond int
+	Context       context.Context
+}
+
+// remoteServiceImpl 服务请求接口实现
+type remoteServiceImpl struct {
+	url      string
+	token    string
+	tenantID string
+	shopCode string
+	context  context.Context
+	client   *http.Client
 }
 
 // SoeRestAPIException 异常
@@ -50,7 +70,6 @@ type SoeGoResponseVO struct {
 	Msg  string      `json:"msg"`
 }
 
-// 告警配置
 type AlarmConfig struct {
 	SendErrorToWx bool   //发送微信告警
 	ChatID        string //微信群id
@@ -58,13 +77,15 @@ type AlarmConfig struct {
 }
 
 type SoeHTTPConfig struct {
-	Alarm   AlarmConfig           //告警配置
-	Hystrix hystrix.CommandConfig //熔断配置
+	Alarm         AlarmConfig           //告警配置
+	Hystrix       hystrix.CommandConfig //熔断配置
+	EnableHystrix bool
 }
 
-var alarm = AlarmConfig{
-	SendErrorToWx: false,
-}
+var (
+	alarm         = AlarmConfig{SendErrorToWx: false}
+	enableHystrix = false
+)
 
 const (
 	remotePost = "RemotePost"
@@ -75,116 +96,104 @@ const (
 // InitConfig 初始化http 配置信息
 func InitConfig(config SoeHTTPConfig) {
 	alarm = config.Alarm
+	enableHystrix = config.EnableHystrix
 	hystrix.ConfigureCommand(remotePost, config.Hystrix)
 	hystrix.ConfigureCommand(remoteGET, config.Hystrix)
 	hystrix.ConfigureCommand(remoteDel, config.Hystrix)
 }
-func Remote(url string, args ...string) *SoeRemoteService {
-	soeRemoteService := SoeRemoteService{URL: url, Context: nil}
-	switch len(args) {
-	case 1:
-		soeRemoteService.Token = args[0]
-	case 2:
-		soeRemoteService.Token = args[0]
-		soeRemoteService.TenantID = args[1]
-	case 3:
-		soeRemoteService.Token = args[0]
-		soeRemoteService.TenantID = args[1]
-		soeRemoteService.ShopCode = args[2]
-	case 4:
-		soeRemoteService.Token = args[0]
-		soeRemoteService.TenantID = args[1]
-		soeRemoteService.ShopCode = args[2]
-		soeRemoteService.TimeOutSecond = args[3]
-		if soeRemoteService.TimeOutSecond == "" {
-			soeRemoteService.TimeOutSecond = "15"
-		}
+
+var _ SoeRemoteService = (*remoteServiceImpl)(nil)
+
+func NewRemote(opt RemoteOption) SoeRemoteService {
+	if opt.Context == nil {
+		opt.Context = context.Background()
 	}
-	soeRemoteService.Client = createDefaultClient(soeRemoteService.TimeOutSecond)
-	return &soeRemoteService
+	if opt.TimeoutSecond <= 0 {
+		opt.TimeoutSecond = 15
+	}
+	return &remoteServiceImpl{
+		url:      opt.URL,
+		token:    opt.Token,
+		tenantID: opt.TenantID,
+		shopCode: opt.ShopCode,
+		context:  opt.Context,
+		client:   createDefaultClient(opt.TimeoutSecond),
+	}
 }
 
-func RemoteWithContent(content context.Context, url string, args ...string) *SoeRemoteService {
-	soeRemoteService := SoeRemoteService{URL: url, Context: content}
-	switch len(args) {
-	case 1:
-		soeRemoteService.Token = args[0]
-	case 2:
-		soeRemoteService.Token = args[0]
-		soeRemoteService.TenantID = args[1]
-	case 3:
-		soeRemoteService.Token = args[0]
-		soeRemoteService.TenantID = args[1]
-		soeRemoteService.ShopCode = args[2]
-	}
-	soeRemoteService.Client = createDefaultClient(soeRemoteService.TimeOutSecond)
-	return &soeRemoteService
+// Remote 兼容系统老的写法
+func Remote(url string, args ...string) SoeRemoteService {
+	return RemoteWithContent(context.Background(), url, args...)
 }
 
-func createDefaultClient(timeoutSeconds string) *http.Client {
+// RemoteWithContent 兼容系统老的写法
+func RemoteWithContent(ctx context.Context, url string, args ...string) SoeRemoteService {
 	timeout := 15 // 默认15秒
-	if timeoutSeconds != "" {
-		if t, err := strconv.Atoi(timeoutSeconds); err == nil && t > 0 {
-			timeout = t
+	soeRemoteService := &remoteServiceImpl{url: url, context: ctx}
+	switch len(args) {
+	case 1:
+		soeRemoteService.token = args[0]
+	case 2:
+		soeRemoteService.token = args[0]
+		soeRemoteService.tenantID = args[1]
+	case 3:
+		soeRemoteService.token = args[0]
+		soeRemoteService.tenantID = args[1]
+		soeRemoteService.shopCode = args[2]
+	case 4:
+		soeRemoteService.token = args[0]
+		soeRemoteService.tenantID = args[1]
+		soeRemoteService.shopCode = args[2]
+		if args[3] != "" {
+			if t, err := strconv.Atoi(args[3]); err == nil && t > 0 {
+				timeout = t
+			}
 		}
 	}
+	soeRemoteService.client = createDefaultClient(timeout)
+	return soeRemoteService
+}
 
+func createDefaultClient(timeoutSeconds int) *http.Client {
 	tr := &http.Transport{
 		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 		MaxIdleConnsPerHost: 1000,
 	}
-
 	return &http.Client{
-		Timeout:   time.Duration(timeout) * time.Second,
+		Timeout:   time.Duration(timeoutSeconds) * time.Second,
 		Transport: tr,
 	}
 }
 
-func (s *SoeRemoteService) WithClient(client *http.Client) *SoeRemoteService {
-	s.Client = client
+func (s *remoteServiceImpl) WithClient(client *http.Client) SoeRemoteService {
+	s.client = client
 	return s
 }
 
-func (s *SoeRemoteService) NewPost(postBody *[]byte) ([]byte, error) {
-	req, err := http.NewRequest("POST", s.URL, bytes.NewReader(*postBody))
+func (s *remoteServiceImpl) Post(postBody *[]byte) ([]byte, error) {
+	req, err := http.NewRequestWithContext(s.context, "POST", s.url, bytes.NewReader(*postBody))
 	if err != nil {
 		return nil, err
 	}
-	return s.NewDo(req, "RemotePost")
+	return s.do(req, "RemotePost")
 }
 
-func (s *SoeRemoteService) NewGet(newReader io.Reader) ([]byte, error) {
-	req, err := http.NewRequest("GET", s.URL, newReader)
+func (s *remoteServiceImpl) Get(newReader io.Reader) ([]byte, error) {
+	req, err := http.NewRequestWithContext(s.context, "GET", s.url, newReader)
 	if err != nil {
 		return nil, err
 	}
-	return s.NewDo(req, "RemoteGET")
+	return s.do(req, "RemoteGET")
 }
-
-func (s *SoeRemoteService) Post(postBody *[]byte) ([]byte, error) {
-	req, err := http.NewRequest("POST", s.URL, bytes.NewReader(*postBody))
-	if err != nil {
-		return nil, err
-	}
-	return s.NewDo(req, "RemotePost")
-}
-
-func (s *SoeRemoteService) Get(newReader io.Reader) ([]byte, error) {
-	req, err := http.NewRequest("GET", s.URL, newReader)
-	if err != nil {
-		return nil, err
-	}
-	return s.NewDo(req, "RemoteGET")
-}
-func (s *SoeRemoteService) Delete(newReader io.Reader) ([]byte, error) {
-	req, err := http.NewRequest("DELETE", s.URL, newReader)
+func (s *remoteServiceImpl) Delete(newReader io.Reader) ([]byte, error) {
+	req, err := http.NewRequestWithContext(s.context, "DELETE", s.url, newReader)
 	if err != nil {
 		return nil, err
 	}
 	return s.do(req, "RemoteDELETE")
 }
 
-func (s *SoeRemoteService) DeleteEntity(v interface{}) error {
+func (s *remoteServiceImpl) DeleteEntity(v interface{}) error {
 	body, err := s.Delete(nil)
 	if err != nil {
 		return err
@@ -199,7 +208,7 @@ func (s *SoeRemoteService) DeleteEntity(v interface{}) error {
 	return nil
 }
 
-func (s *SoeRemoteService) GetEntity(v interface{}) error {
+func (s *remoteServiceImpl) GetEntity(v interface{}) error {
 	body, err := s.Get(nil)
 	if err != nil {
 		return err
@@ -214,7 +223,7 @@ func (s *SoeRemoteService) GetEntity(v interface{}) error {
 	return nil
 }
 
-func (s *SoeRemoteService) PostEntity(v interface{}, r interface{}) error {
+func (s *remoteServiceImpl) PostEntity(v interface{}, r interface{}) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -233,83 +242,58 @@ func (s *SoeRemoteService) PostEntity(v interface{}, r interface{}) error {
 	return nil
 }
 
-func (s *SoeRemoteService) do(req *http.Request, operationName string) (result []byte, err error) {
-	client := s.Client
+// NewDo 去除熔断检测
+func (s *remoteServiceImpl) do(req *http.Request, operationName string) (result []byte, err error) {
+	client := s.client
 	s.setHeaders(req)
-
-	err = hystrix.Do(operationName, func() error {
-		var respond *http.Response
-		respond, err = client.Do(req)
-		if err != nil {
+	if enableHystrix {
+		// 启用熔断
+		err = hystrix.Do(operationName, func() error {
+			result, err = s.doRequest(client, req)
 			return err
-		}
-
-		if !(respond.StatusCode >= 200 && respond.StatusCode <= 207) {
-			err = s.handleError(respond)
-			return err
-		}
-
-		result, err = io.ReadAll(respond.Body)
-		if err != nil {
-			return err
-		}
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-
-			}
-		}(respond.Body)
-		return err
-	}, func(err error) error {
-		soelog.Logger.Info(req.URL.Host + ":" + req.URL.Path + "》》》》》》熔断降级：" + err.Error())
-		if alarm.SendErrorToWx {
-			if alarm.ChatID != "" && alarm.ApiPath != "" {
-				content := fmt.Sprintf("GET 请求发生熔断错误！ URL:%s TenantID:%s", s.URL, s.TenantID)
-				go func() {
-					err := utils.SendMsgToWorkWx(alarm.ChatID, content, alarm.ApiPath, utils.WorkWxRestTokenStr)
-					if err != nil {
-
-					}
-				}()
-			}
-		}
-		err = errors.New("fallback")
-		return err
-	})
-	if err != nil {
-		return nil, err
+		}, func(e error) error {
+			// 发生熔断处理逻辑
+			s.sendFallbackAlert(req, e)
+			return errors.New("fallback")
+		})
+	} else {
+		result, err = s.doRequest(client, req)
 	}
 	return result, err
 }
 
-// NewDo 去除熔断检测
-func (s *SoeRemoteService) NewDo(req *http.Request, operationName string) (result []byte, err error) {
-	client := s.Client
-	s.setHeaders(req)
-	respond, err := client.Do(req)
+func (s *remoteServiceImpl) doRequest(client *http.Client, req *http.Request) ([]byte, error) {
+	resp, err := client.Do(req)
 	if err != nil {
-		return result, err
+		return nil, err
 	}
 	defer func(Body io.ReadCloser) {
-		err := Body.Close()
+		err = Body.Close()
 		if err != nil {
-			fmt.Printf("close http error:" + err.Error())
+			fmt.Printf("http do request 关闭流错误:%s \n", err.Error())
 		}
-	}(respond.Body)
+	}(resp.Body)
+	if !(resp.StatusCode >= 200 && resp.StatusCode <= 207) {
+		return nil, s.handleError(resp)
+	}
+	return io.ReadAll(resp.Body)
+}
 
-	if !(respond.StatusCode >= 200 && respond.StatusCode <= 207) {
-		err = s.handleError(respond)
-		return result, err
+func (s *remoteServiceImpl) sendFallbackAlert(req *http.Request, err error) {
+	soelog.Logger.Info(req.URL.Host + ":" + req.URL.Path + " 熔断降级：" + err.Error())
+	if alarm.SendErrorToWx && alarm.ChatID != "" && alarm.ApiPath != "" {
+		content := fmt.Sprintf("请求熔断错误！URL:%s TenantID:%s", s.url, s.tenantID)
+		go func() {
+			err = utils.SendMsgToWorkWx(alarm.ChatID, content, alarm.ApiPath, utils.WorkWxRestTokenStr)
+			if err != nil {
+				fmt.Printf("请求发生熔断错误，发送预警消息到企业微信失败:%s \n", err.Error())
+			}
+		}()
 	}
-	result, err = io.ReadAll(respond.Body)
-	if err != nil {
-		return result, err
-	}
-	return result, nil
 }
 
 // 错误解析
-func (s *SoeRemoteService) handleError(resp *http.Response) (err error) {
+func (s *remoteServiceImpl) handleError(resp *http.Response) (err error) {
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
 		err = errors.New(http.StatusText(resp.StatusCode))
 		return err
@@ -357,15 +341,15 @@ func (s *SoeRemoteService) handleError(resp *http.Response) (err error) {
 	return err
 }
 
-func (s *SoeRemoteService) setHeaders(req *http.Request) {
+func (s *remoteServiceImpl) setHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	if s.Token != "" {
-		req.Header.Set("Authorization", s.Token)
+	if s.token != "" {
+		req.Header.Set("Authorization", s.token)
 	}
-	if s.TenantID != "" {
-		req.Header.Set("tenantId", s.TenantID)
+	if s.tenantID != "" {
+		req.Header.Set("tenantId", s.tenantID)
 	}
-	if s.ShopCode != "" {
-		req.Header.Set("shopCode", s.ShopCode)
+	if s.shopCode != "" {
+		req.Header.Set("shopCode", s.shopCode)
 	}
 }
