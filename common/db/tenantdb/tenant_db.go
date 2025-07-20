@@ -109,7 +109,7 @@ func GetDbFromMap(tenantID string, crmDB *gorm.DB, args ...interface{}) (*gorm.D
 	key := "SQLDB_" + tenantID
 	keylock.GetKeyLockIns().Lock(key)
 	defer keylock.GetKeyLockIns().Unlock(key)
-	applicationName, enableTrace, logLevel := parseArguments(args)
+	applicationName, enableTrace, logLevel := parseArguments(args...)
 	if sqlDB, isOk := dbMap.Load(tenantID); isOk {
 		db := sqlDB.(*gorm.DB)
 		dbInfo, _ := db.DB()
@@ -189,7 +189,7 @@ func GetDbFromMapV2(tenantID string, crmDB *gorm.DB, enable bool, args ...interf
 	key := "SQLDB_" + tenantID
 	keylock.GetKeyLockIns().Lock(key)
 	defer keylock.GetKeyLockIns().Unlock(key)
-	applicationName, enableTrace, logLevel := parseArguments(args)
+	applicationName, enableTrace, logLevel := parseArguments(args...)
 	if sqldb, isOk := dbMap.Load(tenantID); isOk {
 		db := sqldb.(*gorm.DB)
 		dbInfo, _ := db.DB()
