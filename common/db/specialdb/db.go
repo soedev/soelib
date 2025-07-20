@@ -69,7 +69,6 @@ func ConnDB(config DbConfig) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(config.MaxIdleConns)       // 设置最大空闲连接数
 	sqlDB.SetMaxOpenConns(config.MaxOpenConns)       // 设置最大连接数
 	sqlDB.SetConnMaxLifetime(config.ConnMaxLifetime) // 设置连接最大生命周期
-
 	return db, nil
 }
 

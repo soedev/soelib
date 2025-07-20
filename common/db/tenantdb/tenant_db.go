@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/soedev/soelib/common/config"
 	"github.com/soedev/soelib/common/des"
 	"github.com/soedev/soelib/common/keylock"
 	"github.com/soedev/soelib/common/soelog"
@@ -24,20 +23,13 @@ var dbMap sync.Map
 
 type OptSQL struct {
 	DBConfig        gorm.Config
+	EnableTrace     bool
 	ApplicationName string
 }
 
-func GetSQLDb(tenantID string, crmDB *gorm.DB, enable bool) (*gorm.DB, error) {
-	opt := &OptSQL{
-		DBConfig:        gorm.Config{Logger: logger.Default.LogMode(logger.Error)},
-		ApplicationName: "go-saas-service",
-	}
-	return getSQLDbWithOpt(tenantID, crmDB, opt, enable)
-}
-
-func getSQLDbWithOpt(tenantID string, crmDB *gorm.DB, opt *OptSQL, enable bool) (*gorm.DB, error) {
+// 获取租户数据源统一方法：  tenantID（租户编号）、crmDB（获取配置连接源）、optSQL（数据库配置参数）、enable（是否启用备用数据源）
+func _getDB(tenantID string, crmDB *gorm.DB, opt *OptSQL, enable bool) (sqlDb *gorm.DB, err error) {
 	var tenantDataSource TenantDataSource
-	var err error
 	isNew := enable
 	if enable {
 		repository := NewTDSBRepository(crmDB)
@@ -74,18 +66,22 @@ func getSQLDbWithOpt(tenantID string, crmDB *gorm.DB, opt *OptSQL, enable bool) 
 	if password == "" {
 		return nil, errors.New("数据源设置错误，密码为空！")
 	}
-	dbInfo := fmt.Sprintf("server=%s;user id=%s;password=%s;database=%s;port=%d;encrypt=disable", server, tenantDataSource.UserName, password, dbName, port)
-	sqlDb, err := gorm.Open(sqlserver.Open(dbInfo), &opt.DBConfig)
+
 	if tenantDataSource.DriverClassname == "org.postgresql.ds.PGSimpleDataSource" {
-		dbInfo = fmt.Sprintf("host=%s user=%s port=%d dbname=%s sslmode=disable password=%s application_name=%s",
+		dbInfo := fmt.Sprintf("host=%s user=%s port=%d dbname=%s sslmode=disable password=%s application_name=%s",
 			server, tenantDataSource.UserName, port, dbName, password, opt.ApplicationName)
 		sqlDb, err = gorm.Open(postgres.Open(dbInfo), &opt.DBConfig)
+	} else {
+		dbInfo := fmt.Sprintf("server=%s;user id=%s;password=%s;database=%s;port=%d;encrypt=disable; application_name=%s", server, tenantDataSource.UserName, password, dbName, port, opt.ApplicationName)
+		sqlDb, err = gorm.Open(sqlserver.Open(dbInfo), &opt.DBConfig)
 	}
+
 	if err != nil {
 		return nil, err
 	}
-	if config.Config.TraceConfig.Enable {
-		if err := sqlDb.Use(tracing.NewPlugin()); err != nil {
+	// 启用链路
+	if opt.EnableTrace {
+		if err = sqlDb.Use(tracing.NewPlugin()); err != nil {
 			return nil, err
 		}
 	}
@@ -108,20 +104,23 @@ func getSQLDbWithOpt(tenantID string, crmDB *gorm.DB, opt *OptSQL, enable bool) 
 	return sqlDb, nil
 }
 
-// GetDbFromMap 增加数据源到缓存
-func GetDbFromMap(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
+// GetDbFromMap 获取数据源标准方法 tenantID（租户编号）、crmDB（获取配置连接源）、args（参数列表{程序名称、启用链路、日志级别}）
+func GetDbFromMap(tenantID string, crmDB *gorm.DB, args ...interface{}) (*gorm.DB, error) {
 	key := "SQLDB_" + tenantID
 	keylock.GetKeyLockIns().Lock(key)
 	defer keylock.GetKeyLockIns().Unlock(key)
+	applicationName, enableTrace, logLevel := parseArguments(args)
 	if sqlDB, isOk := dbMap.Load(tenantID); isOk {
 		db := sqlDB.(*gorm.DB)
 		dbInfo, _ := db.DB()
-		//go senMsgToWx(tenantID, db.DB().Stats())
 		if err := dbInfo.Ping(); err != nil {
 			_ = dbInfo.Close()
 			dbMap.Delete(tenantID)
-			//log.Println("移除数据源：", tenantID)
-			newDb, err := GetSQLDb(tenantID, crmdb, false)
+			newDb, err := _getDB(tenantID, crmDB, &OptSQL{
+				DBConfig:        gorm.Config{Logger: logger.Default.LogMode(logLevel)},
+				ApplicationName: applicationName,
+				EnableTrace:     enableTrace,
+			}, false)
 			if err != nil {
 				return nil, err
 			}
@@ -131,15 +130,21 @@ func GetDbFromMap(tenantID string, crmdb *gorm.DB) (*gorm.DB, error) {
 		}
 		return db, nil
 	}
-	newDb, err := GetSQLDb(tenantID, crmdb, false)
+
+	newDb, err := _getDB(tenantID, crmDB, &OptSQL{
+		DBConfig:        gorm.Config{Logger: logger.Default.LogMode(logLevel)},
+		ApplicationName: applicationName,
+		EnableTrace:     enableTrace,
+	}, false)
+
 	if err != nil {
 		return nil, err
 	}
 	dbMap.Store(tenantID, newDb)
-	//log.Println("增加数据源：", tenantID)
 	return newDb, nil
 }
 
+// GetDbFromMapWithOpt 根据配置获取数据源 tenantID（租户编号）、crmDB（获取配置连接源）、opt（数据库配置信息）
 func GetDbFromMapWithOpt(tenantID string, crmDB *gorm.DB, opt *OptSQL) (*gorm.DB, error) {
 	key := "SQLDB_" + tenantID
 	keylock.GetKeyLockIns().Lock(key)
@@ -147,22 +152,19 @@ func GetDbFromMapWithOpt(tenantID string, crmDB *gorm.DB, opt *OptSQL) (*gorm.DB
 	if sqldb, isOk := dbMap.Load(tenantID); isOk {
 		db := sqldb.(*gorm.DB)
 		dbInfo, _ := db.DB()
-		//go senMsgToWx(tenantID, db.DB().Stats())
 		if err := dbInfo.Ping(); err != nil {
 			_ = dbInfo.Close()
 			dbMap.Delete(tenantID)
-			//log.Println("移除数据源：", tenantID)
-			newDb, err := getSQLDbWithOpt(tenantID, crmDB, opt, false)
+			newDb, err := _getDB(tenantID, crmDB, opt, false)
 			if err != nil {
 				return nil, err
 			}
 			dbMap.Store(tenantID, newDb)
-			//log.Println(fmt.Sprintf("增加数据源：%s", tenantID))
 			return newDb, nil
 		}
 		return db, nil
 	}
-	newDb, err := getSQLDbWithOpt(tenantID, crmDB, opt, false)
+	newDb, err := _getDB(tenantID, crmDB, opt, false)
 	if err != nil {
 		return nil, err
 	}
@@ -182,36 +184,60 @@ func senMsgToWx(tenantId string, status sql.DBStats) {
 	}
 }
 
-// GetDbFromMapV2 增加数据源到缓存
-func GetDbFromMapV2(tenantID string, crmDB *gorm.DB, enable bool) (*gorm.DB, error) {
+// GetDbFromMapV2 获取数据源扩展方法 tenantID（租户编号）、crmDB（获取配置连接源）、enable（是否启用备库）args（参数列表{程序名称、启用链路、日志级别}）
+func GetDbFromMapV2(tenantID string, crmDB *gorm.DB, enable bool, args ...interface{}) (*gorm.DB, error) {
 	key := "SQLDB_" + tenantID
 	keylock.GetKeyLockIns().Lock(key)
 	defer keylock.GetKeyLockIns().Unlock(key)
+	applicationName, enableTrace, logLevel := parseArguments(args)
 	if sqldb, isOk := dbMap.Load(tenantID); isOk {
 		db := sqldb.(*gorm.DB)
 		dbInfo, _ := db.DB()
-		//go senMsgToWx(tenantID, db.DB().Stats())
 		if err := dbInfo.Ping(); err != nil {
 			_ = dbInfo.Close()
 			dbMap.Delete(tenantID)
-			//log.Println("移除数据源：", tenantID)
-			newDb, err := GetSQLDb(tenantID, crmDB, enable)
+			newDb, err := _getDB(tenantID, crmDB, &OptSQL{
+				DBConfig:        gorm.Config{Logger: logger.Default.LogMode(logLevel)},
+				ApplicationName: applicationName,
+				EnableTrace:     enableTrace,
+			}, enable)
 			if err != nil {
 				return nil, err
 			}
 			dbMap.Store(tenantID, newDb)
-			//log.Println(fmt.Sprintf("增加数据源：%s", tenantID))
 			return newDb, nil
 		}
 		return db, nil
 	}
-	newDb, err := GetSQLDb(tenantID, crmDB, enable)
+	newDb, err := _getDB(tenantID, crmDB, &OptSQL{
+		DBConfig:        gorm.Config{Logger: logger.Default.LogMode(logLevel)},
+		ApplicationName: applicationName,
+		EnableTrace:     enableTrace,
+	}, enable)
+
 	if err != nil {
 		return nil, err
 	}
 	dbMap.Store(tenantID, newDb)
-	//log.Println("增加数据源：", tenantID)
 	return newDb, nil
+}
+
+func parseArguments(args ...interface{}) (string, bool, logger.LogLevel) {
+	applicationName := "go-service"
+	enableTrace := false
+	logLevel := logger.Error // 默认错误级别L
+	switch len(args) {
+	case 1:
+		applicationName = args[0].(string)
+	case 2:
+		applicationName = args[0].(string)
+		enableTrace = args[1].(bool)
+	case 3:
+		applicationName = args[0].(string)
+		enableTrace = args[1].(bool)
+		logLevel = args[2].(logger.LogLevel)
+	}
+	return applicationName, enableTrace, logLevel
 }
 
 func UpdateMapV2(tenantID string) {
@@ -220,6 +246,5 @@ func UpdateMapV2(tenantID string) {
 		sqlDb, _ := db.DB()
 		_ = sqlDb.Close()
 		dbMap.Delete(tenantID)
-		//log.Println("更新数据源：", tenantID)
 	}
 }
