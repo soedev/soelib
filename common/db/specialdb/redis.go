@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"github.com/gomodule/redigo/redis"
 	splunkredis "github.com/signalfx/splunk-otel-go/instrumentation/github.com/gomodule/redigo/splunkredigo/redis"
 	"github.com/soedev/soelib/common/des"
@@ -306,11 +307,32 @@ func (s *RedisTemplate) buildArgs(ctx context.Context, args []interface{}) []int
 	if !s.EnableTrace {
 		return args
 	}
-	// 统一处理无效上下文
-	if ctx == nil || ctx.Err() != nil {
-		ctx = context.Background()
+	if ctx == nil {
+		return append(args, context.Background())
+	}
+	// 检查 ctx 有效性
+	// 1.误传入 *gin.Context
+	if ginCtx, ok := ctx.(*gin.Context); ok {
+		if ginCtx == nil {
+			return append(args, context.Background())
+		}
+		ctx = ginCtx.Request.Context()
+	}
+	// 2.常规错误检查
+	if ctx.Err() != nil {
+		return append(args, context.Background())
 	}
 	return append(args, ctx)
+}
+
+func isInvalidContext(ctx context.Context) bool {
+	// 检查是否是gin.Context的nil指针
+	if ginCtx, ok := ctx.(*gin.Context); ok && ginCtx == nil {
+		return true
+	}
+	// 可以添加其他特定类型的检查
+	// 例如检查其他可能被误传的类型
+	return false
 }
 
 func redisHGETALLToMap(values []interface{}) ([][]byte, error) {
