@@ -6,15 +6,17 @@ package lucslot
 */
 import (
 	"errors"
+
 	"github.com/soedev/soelib/tools/ants"
+
 	"sync"
 	"time"
 )
 
-//执行的任务函数
+// 执行的任务函数
 type TaskFunc func(args ...interface{})
 
-//任务
+// 任务
 type Task struct {
 	//转动圈数： 如果需要延迟到1小时候执行的任务 就会加圈
 	turnNum int

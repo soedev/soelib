@@ -2,7 +2,9 @@ package lucslot
 
 import (
 	"fmt"
+
 	"github.com/soedev/soelib/tools/ants"
+
 	"math/rand"
 	"strconv"
 	"sync"
@@ -10,7 +12,7 @@ import (
 	"time"
 )
 
-//1000000 个任务调度测试
+// 1000000 个任务调度测试
 func TestSlots(t *testing.T) {
 	var wg sync.WaitGroup
 	//先初始化池子
@@ -64,7 +66,7 @@ func TestSlots1(t *testing.T) {
 	//40秒后关闭
 	time.AfterFunc(time.Second*30, func() {
 		dm.Stop()
-		fmt.Println(fmt.Sprintf("Running %d", ants.RunningCount()))
+		fmt.Println(fmt.Sprintf("Running %d"))
 	})
 	dm.Run()
 }

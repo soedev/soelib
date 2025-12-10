@@ -3,15 +3,16 @@ package alirabbitmq
 import (
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/soedev/soelib/common/config"
 	"github.com/soedev/soelib/common/soelog"
 	"github.com/soedev/soelib/tools/ants"
 	"github.com/spf13/cast"
 	"github.com/streadway/amqp"
-	"time"
 )
 
-//Message 消息
+// Message 消息
 type Message struct {
 	Exchange    string `json:"exchange"`
 	QueueName   string `json:"queueName"`
@@ -19,20 +20,20 @@ type Message struct {
 	NotifyCount int    `json:"notifyCount"`
 }
 
-//InitRabbitMQConsumer 初始化消费者
+// InitRabbitMQConsumer 初始化消费者
 func (c *Connection) InitRabbitMQConsumer(isClose bool, rabbitMQConfig config.Rabbit) {
 	if isClose {
 		c.CloseProcess <- true
 	}
 	c.Rabbit = rabbitMQConfig
-	url := "amqp://" + c.Rabbit.Username + ":" + c.Rabbit.Password + "@" + c.Rabbit.Host + ":" + cast.ToString(c.Rabbit.Port) + "/"+rabbitMQConfig.Vhost
+	url := "amqp://" + c.Rabbit.Username + ":" + c.Rabbit.Password + "@" + c.Rabbit.Host + ":" + cast.ToString(c.Rabbit.Port) + "/" + rabbitMQConfig.Vhost
 	//连接rabbit
 	conn, err := amqp.Dial(url)
 	if err != nil {
 		soelog.Logger.Error(fmt.Sprintf("rabbit连接异常:%s", err.Error()))
 		soelog.Logger.Info("休息5S,开始重连rabbitMq消费者")
 		time.Sleep(5 * time.Second)
-		ants.Submit(func() { c.InitRabbitMQConsumer(false, c.Rabbit) })
+		ants.SubmitTask(func() { c.InitRabbitMQConsumer(false, c.Rabbit) })
 		return
 	}
 	defer conn.Close()
@@ -95,14 +96,14 @@ func (c *Connection) CreateRabbitMQConsumer() error {
 		if err != nil {
 			return fmt.Errorf(fmt.Sprintf("MQ %s:%s", "创建消费者失败", err.Error()))
 		}
-		ants.Submit(func() {
+		ants.SubmitTask(func() {
 			c.ConsumeHandle(messages)
 		})
 	}
 	return nil
 }
 
-//ConsumerReConnect 消费者重连
+// ConsumerReConnect 消费者重连
 func (c *Connection) ConsumerReConnect() {
 closeTag:
 	for {
@@ -124,7 +125,7 @@ closeTag:
 			if isConnChannelOpen {
 				close(c.ConnNotifyClose)
 			}
-			ants.Submit(func() {
+			ants.SubmitTask(func() {
 				c.InitRabbitMQConsumer(false, c.Rabbit)
 			})
 			break closeTag
@@ -142,7 +143,7 @@ closeTag:
 			if isConnChannelOpen {
 				close(c.ConnNotifyClose)
 			}
-			ants.Submit(func() {
+			ants.SubmitTask(func() {
 				c.InitRabbitMQConsumer(false, c.Rabbit)
 			})
 			break closeTag

@@ -3,15 +3,16 @@ package rabbitmq
 import (
 	"encoding/json"
 	"fmt"
+	"time"
+
 	"github.com/soedev/soelib/common/config"
 	"github.com/soedev/soelib/common/soelog"
 	"github.com/soedev/soelib/tools/ants"
 	"github.com/spf13/cast"
 	"github.com/streadway/amqp"
-	"time"
 )
 
-//Rabbit连接
+// Rabbit连接
 type Connection struct {
 	//连接
 	Conn *amqp.Connection
@@ -52,7 +53,7 @@ func dial(url string) (*amqp.Connection, error) {
 	return conn, nil
 }
 
-//ProducerReConnect 生产者重连
+// ProducerReConnect 生产者重连
 func (c *Connection) ProducerReConnect() {
 closeTag:
 	for {
@@ -77,7 +78,7 @@ closeTag:
 					close(c.ConnNotifyClose)
 				}
 				//connection关闭时会自动关闭channel
-				ants.Submit(func() { c.InitRabbitMQProducer(false, c.Rabbit) })
+				ants.SubmitTask(func() { c.InitRabbitMQProducer(false, c.Rabbit) })
 				//结束子进程
 				break closeTag
 			} else { //连接成功
@@ -108,7 +109,7 @@ closeTag:
 				if isConnChannelOpen {
 					close(c.ConnNotifyClose)
 				}
-				ants.Submit(func() { c.InitRabbitMQProducer(false, c.Rabbit) })
+				ants.SubmitTask(func() { c.InitRabbitMQProducer(false, c.Rabbit) })
 				break closeTag
 			}
 			for err := range c.ChNotifyClose {
@@ -121,7 +122,7 @@ closeTag:
 	soelog.Logger.Info("结束旧生产者进程")
 }
 
-//InitRabbitMQProducer 初始化生产者
+// InitRabbitMQProducer 初始化生产者
 func (c *Connection) InitRabbitMQProducer(isClose bool, rabbitMQConfig config.Rabbit) {
 	if isClose {
 		c.CloseProcess <- true
@@ -133,7 +134,7 @@ func (c *Connection) InitRabbitMQProducer(isClose bool, rabbitMQConfig config.Ra
 		soelog.Logger.Error(fmt.Sprintf("rabbitMQ连接异常:%s", err.Error()))
 		soelog.Logger.Info("休息5S,开始重连rabbitMQ生产者")
 		time.Sleep(5 * time.Second)
-		ants.Submit(func() { c.InitRabbitMQProducer(false, c.Rabbit) })
+		ants.SubmitTask(func() { c.InitRabbitMQProducer(false, c.Rabbit) })
 		return
 	}
 	defer conn.Close()
@@ -154,7 +155,7 @@ func (c *Connection) InitRabbitMQProducer(isClose bool, rabbitMQConfig config.Ra
 	return
 }
 
-//SendAutoCancelOrderMessage 发送消息
+// SendAutoCancelOrderMessage 发送消息
 func (c *Connection) SendAutoCancelOrderMessage(body []byte, autoCancelTime int) error {
 	m := DLXMessage{
 		QueueName:   CancelOrderDelayQueue,
