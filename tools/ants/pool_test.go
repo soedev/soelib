@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -471,5 +472,241 @@ func TestMetricsPerformance(t *testing.T) {
 	}
 	if finalMetrics.SuccessTasks < finalMetrics.TotalTasks-100 {
 		t.Errorf("期望失败任务数不超过100，实际为%d", finalMetrics.TotalTasks-finalMetrics.SuccessTasks)
+	}
+}
+
+// TestHealthAnalysis 测试健康分析功能
+func TestHealthAnalysis(t *testing.T) {
+	// 创建线程池
+	pool, err := New("health-test-pool", 5)
+	if err != nil {
+		t.Fatalf("创建线程池失败: %v", err)
+	}
+	defer pool.Release()
+
+	// 配置健康分析
+	healthConfig := HealthConfig{
+		Enabled:              true,
+		SlowTaskThreshold:    time.Millisecond * 200, // 超过200ms视为慢任务
+		MaxSlowTaskRecords:   10,
+		MaxFailedTaskRecords: 10,
+	}
+	pool.SetHealthConfig(healthConfig)
+
+	// 验证配置
+	config := pool.GetHealthConfig()
+	if !config.Enabled {
+		t.Error("健康分析应该被启用")
+	}
+	if config.SlowTaskThreshold != time.Millisecond*200 {
+		t.Errorf("慢任务阈值应该为200ms，实际为%v", config.SlowTaskThreshold)
+	}
+
+	// 提交正常任务（不追踪）
+	var normalTaskCount int32
+	for i := 0; i < 5; i++ {
+		pool.Submit(func() {
+			atomic.AddInt32(&normalTaskCount, 1)
+			time.Sleep(time.Millisecond * 50)
+		})
+	}
+
+	// 提交快速任务（追踪但不是慢任务）
+	var fastTaskCount int32
+	for i := 0; i < 3; i++ {
+		taskID := fmt.Sprintf("fast-task-%d", i)
+		pool.SubmitWithTaskID(taskID, func() {
+			atomic.AddInt32(&fastTaskCount, 1)
+			time.Sleep(time.Millisecond * 50)
+		})
+	}
+
+	// 提交慢任务
+	var slowTaskCount int32
+	for i := 0; i < 3; i++ {
+		taskID := fmt.Sprintf("slow-task-%d", i)
+		pool.SubmitWithTaskID(taskID, func() {
+			atomic.AddInt32(&slowTaskCount, 1)
+			time.Sleep(time.Millisecond * 300) // 超过阈值
+		})
+	}
+
+	// 提交异常任务
+	var failedTaskCount int32
+	for i := 0; i < 2; i++ {
+		taskID := fmt.Sprintf("failed-task-%d", i)
+		pool.SubmitWithTaskID(taskID, func() {
+			atomic.AddInt32(&failedTaskCount, 1)
+			panic(fmt.Sprintf("模拟任务异常: %s", taskID))
+		})
+	}
+
+	// 等待所有任务完成
+	time.Sleep(time.Second * 2)
+
+	// 获取健康指标
+	metrics := pool.Metrics()
+
+	// 验证基本指标
+	t.Logf("总任务数: %d", metrics.TotalTasks)
+	t.Logf("被追踪任务数: %d", metrics.TrackedTasks)
+	t.Logf("失败任务数: %d", metrics.FailedTasks)
+
+	// 验证追踪任务数（应该是快速任务+慢任务+异常任务）
+	expectedTrackedTasks := int64(3 + 3 + 2)
+	if metrics.TrackedTasks != expectedTrackedTasks {
+		t.Errorf("期望追踪任务数为%d，实际为%d", expectedTrackedTasks, metrics.TrackedTasks)
+	}
+
+	// 验证慢任务
+	t.Logf("慢任务数: %d", len(metrics.SlowTasks))
+	if len(metrics.SlowTasks) != 3 {
+		t.Errorf("期望慢任务数为3，实际为%d", len(metrics.SlowTasks))
+	}
+
+	// 打印慢任务详情
+	for _, task := range metrics.SlowTasks {
+		t.Logf("  慢任务: %s, 执行时间: %v, 记录时间: %s",
+			task.TaskID, task.ExecutionTime, task.Timestamp.Format("15:04:05"))
+		if task.ExecutionTime <= healthConfig.SlowTaskThreshold {
+			t.Errorf("任务%s执行时间%v应该超过阈值%v", task.TaskID, task.ExecutionTime, healthConfig.SlowTaskThreshold)
+		}
+	}
+
+	// 验证异常任务
+	t.Logf("异常任务数: %d", len(metrics.FailedTasksList))
+	if len(metrics.FailedTasksList) != 2 {
+		t.Errorf("期望异常任务数为2，实际为%d", len(metrics.FailedTasksList))
+	}
+
+	// 打印异常任务详情
+	for _, task := range metrics.FailedTasksList {
+		t.Logf("  异常任务: %s, 错误: %s, 记录时间: %s",
+			task.TaskID, task.Error, task.Timestamp.Format("15:04:05"))
+	}
+
+	// 验证失败任务数
+	if metrics.FailedTasks != 2 {
+		t.Errorf("期望失败任务数为2，实际为%d", metrics.FailedTasks)
+	}
+}
+
+// TestHealthAnalysisWithPoolWithFunc 测试 PoolWithFunc 的健康分析功能
+func TestHealthAnalysisWithPoolWithFunc(t *testing.T) {
+	// 创建带函数的线程池
+	var processedCount int32
+	wfPool, err := NewPoolWithFunc("health-test-wf-pool", func(arg interface{}) {
+		atomic.AddInt32(&processedCount, 1)
+
+		taskInfo := arg.(map[string]interface{})
+		duration := taskInfo["duration"].(time.Duration)
+		shouldPanic := taskInfo["panic"].(bool)
+
+		time.Sleep(duration)
+
+		if shouldPanic {
+			panic("模拟任务异常")
+		}
+	}, 5)
+	if err != nil {
+		t.Fatalf("创建线程池失败: %v", err)
+	}
+	defer wfPool.Release()
+
+	// 配置健康分析
+	healthConfig := HealthConfig{
+		Enabled:              true,
+		SlowTaskThreshold:    time.Millisecond * 150,
+		MaxSlowTaskRecords:   10,
+		MaxFailedTaskRecords: 10,
+	}
+	wfPool.SetHealthConfig(healthConfig)
+
+	// 提交不追踪的任务
+	wfPool.Invoke(map[string]interface{}{
+		"duration": time.Millisecond * 50,
+		"panic":    false,
+	})
+
+	// 提交快速任务（追踪）
+	wfPool.InvokeWithTaskID("fast-task", map[string]interface{}{
+		"duration": time.Millisecond * 50,
+		"panic":    false,
+	})
+
+	// 提交慢任务（追踪）
+	wfPool.InvokeWithTaskID("slow-task", map[string]interface{}{
+		"duration": time.Millisecond * 200,
+		"panic":    false,
+	})
+
+	// 提交异常任务（追踪）
+	wfPool.InvokeWithTaskID("failed-task", map[string]interface{}{
+		"duration": time.Millisecond * 50,
+		"panic":    true,
+	})
+
+	// 等待任务完成
+	time.Sleep(time.Second * 1)
+
+	// 获取健康指标
+	metrics := wfPool.Metrics()
+
+	t.Logf("总任务数: %d", metrics.TotalTasks)
+	t.Logf("被追踪任务数: %d", metrics.TrackedTasks)
+	t.Logf("慢任务数: %d", len(metrics.SlowTasks))
+	t.Logf("异常任务数: %d", len(metrics.FailedTasksList))
+
+	// 验证追踪任务数
+	if metrics.TrackedTasks != 3 {
+		t.Errorf("期望追踪任务数为3，实际为%d", metrics.TrackedTasks)
+	}
+
+	// 验证慢任务
+	if len(metrics.SlowTasks) != 1 {
+		t.Errorf("期望慢任务数为1，实际为%d", len(metrics.SlowTasks))
+	}
+
+	// 验证异常任务
+	if len(metrics.FailedTasksList) != 1 {
+		t.Errorf("期望异常任务数为1，实际为%d", len(metrics.FailedTasksList))
+	}
+}
+
+// TestHealthAnalysisDisabled 测试禁用健康分析的情况
+func TestHealthAnalysisDisabled(t *testing.T) {
+	// 创建线程池
+	pool, err := New("disabled-health-pool", 5)
+	if err != nil {
+		t.Fatalf("创建线程池失败: %v", err)
+	}
+	defer pool.Release()
+
+	// 默认情况下健康分析应该是禁用的
+	config := pool.GetHealthConfig()
+	if config.Enabled {
+		t.Error("健康分析默认应该被禁用")
+	}
+
+	// 提交带ID的任务
+	for i := 0; i < 5; i++ {
+		taskID := fmt.Sprintf("task-%d", i)
+		pool.SubmitWithTaskID(taskID, func() {
+			time.Sleep(time.Millisecond * 100)
+		})
+	}
+
+	// 等待任务完成
+	time.Sleep(time.Second * 1)
+
+	// 获取指标
+	metrics := pool.Metrics()
+
+	// 当健康分析禁用时，不应该记录慢任务和异常任务
+	if len(metrics.SlowTasks) != 0 {
+		t.Errorf("健康分析禁用时不应该记录慢任务，实际记录了%d个", len(metrics.SlowTasks))
+	}
+	if len(metrics.FailedTasksList) != 0 {
+		t.Errorf("健康分析禁用时不应该记录异常任务，实际记录了%d个", len(metrics.FailedTasksList))
 	}
 }

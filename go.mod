@@ -5,7 +5,6 @@ go 1.23.0
 toolchain go1.23.1
 
 require (
-    github.com/panjf2000/ants/v2 v2.11.3
 	github.com/Lofanmi/pinyin-golang v0.0.0-20211114132645-1db892057f20
 	github.com/Shopify/sarama v1.19.0
 	github.com/afex/hystrix-go v0.0.0-20180502004556-fa1af6a1f4f5
@@ -27,6 +26,7 @@ require (
 	github.com/nacos-group/nacos-sdk-go v1.0.8
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/openzipkin/zipkin-go v0.2.2
+	github.com/panjf2000/ants/v2 v2.11.3
 	github.com/pkg/errors v0.9.1
 	github.com/signalfx/splunk-otel-go/instrumentation/github.com/gomodule/redigo/splunkredigo v1.27.0
 	github.com/spf13/cast v1.3.0

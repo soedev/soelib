@@ -6,6 +6,20 @@ import (
 	"time"
 )
 
+// SlowTaskRecord 慢任务记录
+type SlowTaskRecord struct {
+	TaskID        string        `json:"task_id"`        // 任务ID
+	ExecutionTime time.Duration `json:"execution_time"` // 执行时间
+	Timestamp     time.Time     `json:"timestamp"`      // 记录时间
+}
+
+// FailedTaskRecord 异常任务记录
+type FailedTaskRecord struct {
+	TaskID    string    `json:"task_id"`   // 任务ID
+	Error     string    `json:"error"`     // 错误信息
+	Timestamp time.Time `json:"timestamp"` // 记录时间
+}
+
 // Metrics 包含线程池的所有监控指标
 type Metrics struct {
 	Name              string    `json:"name"`
@@ -24,6 +38,10 @@ type Metrics struct {
 	GoroutinesCreated    int64         `json:"goroutines_created"`      // 已创建的协程总数
 	GoroutinesDestroyed  int64         `json:"goroutines_destroyed"`    // 已销毁的协程总数
 	SuccessTasks         int64         `json:"success_tasks"`           // 成功任务数
+	// 健康分析指标（仅针对带ID的任务）
+	TrackedTasks    int64              `json:"tracked_tasks"`     // 被追踪的任务总数
+	SlowTasks       []SlowTaskRecord   `json:"slow_tasks"`        // 慢任务列表
+	FailedTasksList []FailedTaskRecord `json:"failed_tasks_list"` // 异常任务列表
 }
 
 // NewMetrics 创建一个新的 Metrics 实例

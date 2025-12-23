@@ -161,6 +161,178 @@ func Example() {
 	log.Printf("  队列长度变化: %d", customMetrics.QueueLengthChange)
 }
 
+// HealthAnalysisExample 演示健康分析功能的使用
+func HealthAnalysisExample() {
+	// 1. 创建一个启用健康分析的线程池
+	pool, err := New("health-pool", 10)
+	if err != nil {
+		log.Fatalf("创建线程池失败: %v", err)
+	}
+	defer pool.Release()
+
+	// 2. 配置健康分析
+	healthConfig := HealthConfig{
+		Enabled:              true,                   // 启用健康分析
+		SlowTaskThreshold:    time.Millisecond * 500, // 超过500ms视为慢任务
+		MaxSlowTaskRecords:   50,                     // 最多记录50个慢任务
+		MaxFailedTaskRecords: 50,                     // 最多记录50个异常任务
+	}
+	pool.SetHealthConfig(healthConfig)
+	log.Printf("健康分析已启用，慢任务阈值: %v", healthConfig.SlowTaskThreshold)
+
+	// 3. 提交正常任务（不会被追踪）
+	for i := 0; i < 5; i++ {
+		taskID := i
+		pool.Submit(func() {
+			log.Printf("正常任务 %d 执行中（不会被追踪）", taskID)
+			time.Sleep(time.Millisecond * 100)
+		})
+	}
+
+	// 4. 提交带ID的快速任务（会被追踪，但不是慢任务）
+	for i := 0; i < 5; i++ {
+		taskID := fmt.Sprintf("fast-task-%d", i)
+		pool.SubmitWithTaskID(taskID, func() {
+			log.Printf("快速任务 %s 执行中", taskID)
+			time.Sleep(time.Millisecond * 100)
+		})
+	}
+
+	// 5. 提交带ID的慢任务（会被记录为慢任务）
+	for i := 0; i < 3; i++ {
+		taskID := fmt.Sprintf("slow-task-%d", i)
+		pool.SubmitWithTaskID(taskID, func() {
+			log.Printf("慢任务 %s 执行中", taskID)
+			time.Sleep(time.Millisecond * 800) // 超过阈值
+		})
+	}
+
+	// 6. 提交带ID的异常任务（会被记录为异常任务）
+	for i := 0; i < 2; i++ {
+		taskID := fmt.Sprintf("failed-task-%d", i)
+		pool.SubmitWithTaskID(taskID, func() {
+			log.Printf("异常任务 %s 执行中", taskID)
+			panic(fmt.Sprintf("模拟任务 %s 发生异常", taskID))
+		})
+	}
+
+	// 7. 等待任务执行完成
+	time.Sleep(time.Second * 3)
+
+	// 8. 获取健康指标并打印分析结果
+	metrics := pool.Metrics()
+	log.Printf("\n========== 健康分析报告 ==========")
+	log.Printf("线程池名称: %s", metrics.Name)
+	log.Printf("总任务数: %d", metrics.TotalTasks)
+	log.Printf("被追踪任务数: %d", metrics.TrackedTasks)
+	log.Printf("成功任务数: %d", metrics.SuccessTasks)
+	log.Printf("失败任务数: %d", metrics.FailedTasks)
+	log.Printf("平均执行时间: %v", metrics.TaskExecutionTime)
+	log.Printf("最大执行时间: %v", metrics.MaxTaskExecutionTime)
+	log.Printf("最小执行时间: %v", metrics.MinTaskExecutionTime)
+
+	// 9. 打印慢任务分析
+	log.Printf("\n--- 慢任务分析 (阈值: %v) ---", healthConfig.SlowTaskThreshold)
+	if len(metrics.SlowTasks) == 0 {
+		log.Printf("无慢任务")
+	} else {
+		log.Printf("发现 %d 个慢任务:", len(metrics.SlowTasks))
+		for _, task := range metrics.SlowTasks {
+			log.Printf("  - 任务ID: %s, 执行时间: %v, 记录时间: %s",
+				task.TaskID, task.ExecutionTime, task.Timestamp.Format("15:04:05"))
+		}
+	}
+
+	// 10. 打印异常任务分析
+	log.Printf("\n--- 异常任务分析 ---")
+	if len(metrics.FailedTasksList) == 0 {
+		log.Printf("无异常任务")
+	} else {
+		log.Printf("发现 %d 个异常任务:", len(metrics.FailedTasksList))
+		for _, task := range metrics.FailedTasksList {
+			log.Printf("  - 任务ID: %s, 错误: %s, 记录时间: %s",
+				task.TaskID, task.Error, task.Timestamp.Format("15:04:05"))
+		}
+	}
+	log.Printf("==================================\n")
+}
+
+// HealthAnalysisWithPoolWithFuncExample 演示 PoolWithFunc 的健康分析功能
+func HealthAnalysisWithPoolWithFuncExample() {
+	// 创建带函数的线程池
+	wfPool, err := NewPoolWithFunc("health-worker-pool", func(arg interface{}) {
+		taskInfo := arg.(map[string]interface{})
+		taskName := taskInfo["name"].(string)
+		duration := taskInfo["duration"].(time.Duration)
+
+		log.Printf("处理任务: %s", taskName)
+		time.Sleep(duration)
+
+		// 模拟部分任务失败
+		if taskName == "error-task" {
+			panic("模拟任务异常")
+		}
+	}, 10)
+	if err != nil {
+		log.Fatalf("创建线程池失败: %v", err)
+	}
+	defer wfPool.Release()
+
+	// 配置健康分析
+	healthConfig := HealthConfig{
+		Enabled:              true,
+		SlowTaskThreshold:    time.Millisecond * 300,
+		MaxSlowTaskRecords:   50,
+		MaxFailedTaskRecords: 50,
+	}
+	wfPool.SetHealthConfig(healthConfig)
+
+	// 提交不同类型的任务
+	tasks := []struct {
+		id       string
+		name     string
+		duration time.Duration
+		tracked  bool
+	}{
+		{"task-1", "fast-task", time.Millisecond * 100, true},
+		{"task-2", "slow-task", time.Millisecond * 500, true},
+		{"task-3", "error-task", time.Millisecond * 50, true},
+		{"", "untracked-task", time.Millisecond * 200, false},
+	}
+
+	for _, task := range tasks {
+		arg := map[string]interface{}{
+			"name":     task.name,
+			"duration": task.duration,
+		}
+
+		if task.tracked {
+			wfPool.InvokeWithTaskID(task.id, arg)
+		} else {
+			wfPool.Invoke(arg)
+		}
+	}
+
+	// 等待任务完成
+	time.Sleep(time.Second * 2)
+
+	// 打印健康分析报告
+	metrics := wfPool.Metrics()
+	log.Printf("\n========== PoolWithFunc 健康分析报告 ==========")
+	log.Printf("被追踪任务数: %d", metrics.TrackedTasks)
+	log.Printf("慢任务数: %d", len(metrics.SlowTasks))
+	log.Printf("异常任务数: %d", len(metrics.FailedTasksList))
+
+	for _, task := range metrics.SlowTasks {
+		log.Printf("  慢任务: %s (耗时: %v)", task.TaskID, task.ExecutionTime)
+	}
+
+	for _, task := range metrics.FailedTasksList {
+		log.Printf("  异常任务: %s (错误: %s)", task.TaskID, task.Error)
+	}
+	log.Printf("===============================================\n")
+}
+
 // WebServerExample 演示如何在Web服务器上下文中使用antspool
 func WebServerExample() {
 	// 创建一个专门用于处理HTTP请求的线程池
