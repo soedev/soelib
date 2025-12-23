@@ -46,20 +46,20 @@ func (r *TDSRepository) GetByTenantID(tenantStr string) (TenantDataSource, error
 		return TenantDataSource{}, errors.New("无效的租户号")
 	}
 	var tds []TenantDataSource
-	tenantID, err := strconv.ParseInt(tenantStr, 10, 64)
+	_, err := strconv.ParseInt(tenantStr, 10, 64)
 	if err != nil {
 		// 租户填写异常情况（仅根据shopCode查询）
 		sql := `SELECT * FROM crm.tenant_datasource 
 		INNER JOIN crm.client on crm.tenant_datasource.tenant_id=crm.client.tenant_id
 		INNER JOIN crm.client_shop on crm.client.uid = crm.client_shop.client_uid 
 		where crm.client_shop.code=? limit 1`
-		r.db.Raw(sql, tenantID).Find(&tds)
+		r.db.Raw(sql, tenantStr).Find(&tds)
 	} else {
 		sql := `SELECT * FROM crm.tenant_datasource 
 		INNER JOIN crm.client on crm.tenant_datasource.tenant_id=crm.client.tenant_id
 		INNER JOIN crm.client_shop on crm.client.uid = crm.client_shop.client_uid 
 		where crm.tenant_datasource.tenant_id=? or crm.client_shop.code=? limit 1`
-		r.db.Raw(sql, tenantID, tenantID).Find(&tds)
+		r.db.Raw(sql, tenantStr, tenantStr).Find(&tds)
 	}
 	if len(tds) == 0 {
 		return TenantDataSource{}, errors.New("数据源未配置！")
