@@ -1,9 +1,14 @@
 package tenantdb
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
+	"sync"
+	"time"
+
 	"github.com/soedev/soelib/common/des"
 	"github.com/soedev/soelib/common/keylock"
 	"github.com/soedev/soelib/common/soelog"
@@ -13,13 +18,19 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"gorm.io/plugin/opentelemetry/tracing"
-	"log"
-	"sync"
-	"time"
 )
 
 // dbMap 数据源缓存列表
 var dbMap sync.Map
+
+// 健康检查配置
+var (
+	healthCheckInterval = 30 * time.Second // 健康检查间隔
+	healthCheckTimeout  = 5 * time.Second  // 健康检查超时时间
+	healthCheckerOnce   sync.Once
+	healthCheckerCtx    context.Context
+	healthCheckerCancel context.CancelFunc
+)
 
 type OptSQL struct {
 	DBConfig        gorm.Config
@@ -106,31 +117,26 @@ func _getDB(tenantID string, crmDB *gorm.DB, opt *OptSQL, enable bool) (sqlDb *g
 
 // GetDbFromMap 获取数据源标准方法 tenantID（租户编号）、crmDB（获取配置连接源）、args（参数列表{程序名称、启用链路、日志级别}）
 func GetDbFromMap(tenantID string, crmDB *gorm.DB, args ...interface{}) (*gorm.DB, error) {
+	// 启动健康检查器（仅首次调用时启动）
+	startHealthChecker()
+
+	// 第一次检查：无锁快速路径，直接从缓存获取
+	if sqlDB, isOk := dbMap.Load(tenantID); isOk {
+		return sqlDB.(*gorm.DB), nil
+	}
+
+	// 缓存未命中，需要创建新连接，使用键锁避免重复创建
 	key := "SQLDB_" + tenantID
 	keylock.GetKeyLockIns().Lock(key)
 	defer keylock.GetKeyLockIns().Unlock(key)
-	applicationName, enableTrace, logLevel := parseArguments(args...)
+
+	// 第二次检查：可能在等待锁期间已被其他goroutine创建
 	if sqlDB, isOk := dbMap.Load(tenantID); isOk {
-		db := sqlDB.(*gorm.DB)
-		dbInfo, _ := db.DB()
-		if err := dbInfo.Ping(); err != nil {
-			_ = dbInfo.Close()
-			dbMap.Delete(tenantID)
-			newDb, err := _getDB(tenantID, crmDB, &OptSQL{
-				DBConfig:        gorm.Config{Logger: logger.Default.LogMode(logLevel)},
-				ApplicationName: applicationName,
-				EnableTrace:     enableTrace,
-			}, false)
-			if err != nil {
-				return nil, err
-			}
-			dbMap.Store(tenantID, newDb)
-			//log.Println(fmt.Sprintf("增加数据源：%s", tenantID))
-			return newDb, nil
-		}
-		return db, nil
+		return sqlDB.(*gorm.DB), nil
 	}
 
+	// 确实需要创建新连接
+	applicationName, enableTrace, logLevel := parseArguments(args...)
 	newDb, err := _getDB(tenantID, crmDB, &OptSQL{
 		DBConfig:        gorm.Config{Logger: logger.Default.LogMode(logLevel)},
 		ApplicationName: applicationName,
@@ -140,36 +146,40 @@ func GetDbFromMap(tenantID string, crmDB *gorm.DB, args ...interface{}) (*gorm.D
 	if err != nil {
 		return nil, err
 	}
+
 	dbMap.Store(tenantID, newDb)
+	soelog.Logger.Info(fmt.Sprintf("创建新数据源连接：租户[%s]", tenantID))
 	return newDb, nil
 }
 
 // GetDbFromMapWithOpt 根据配置获取数据源 tenantID（租户编号）、crmDB（获取配置连接源）、opt（数据库配置信息）
 func GetDbFromMapWithOpt(tenantID string, crmDB *gorm.DB, opt *OptSQL) (*gorm.DB, error) {
+	// 启动健康检查器（仅首次调用时启动）
+	startHealthChecker()
+
+	// 第一次检查：无锁快速路径，直接从缓存获取
+	if sqlDB, isOk := dbMap.Load(tenantID); isOk {
+		return sqlDB.(*gorm.DB), nil
+	}
+
+	// 缓存未命中，需要创建新连接，使用键锁避免重复创建
 	key := "SQLDB_" + tenantID
 	keylock.GetKeyLockIns().Lock(key)
 	defer keylock.GetKeyLockIns().Unlock(key)
-	if sqldb, isOk := dbMap.Load(tenantID); isOk {
-		db := sqldb.(*gorm.DB)
-		dbInfo, _ := db.DB()
-		if err := dbInfo.Ping(); err != nil {
-			_ = dbInfo.Close()
-			dbMap.Delete(tenantID)
-			newDb, err := _getDB(tenantID, crmDB, opt, false)
-			if err != nil {
-				return nil, err
-			}
-			dbMap.Store(tenantID, newDb)
-			return newDb, nil
-		}
-		return db, nil
+
+	// 第二次检查：可能在等待锁期间已被其他goroutine创建
+	if sqlDB, isOk := dbMap.Load(tenantID); isOk {
+		return sqlDB.(*gorm.DB), nil
 	}
+
+	// 确实需要创建新连接
 	newDb, err := _getDB(tenantID, crmDB, opt, false)
 	if err != nil {
 		return nil, err
 	}
+
 	dbMap.Store(tenantID, newDb)
-	//log.Println("增加数据源：", tenantID)
+	soelog.Logger.Info(fmt.Sprintf("创建新数据源连接：租户[%s]", tenantID))
 	return newDb, nil
 }
 
@@ -186,29 +196,26 @@ func senMsgToWx(tenantId string, status sql.DBStats) {
 
 // GetDbFromMapV2 获取数据源扩展方法 tenantID（租户编号）、crmDB（获取配置连接源）、enable（是否启用备库）args（参数列表{程序名称、启用链路、日志级别}）
 func GetDbFromMapV2(tenantID string, crmDB *gorm.DB, enable bool, args ...interface{}) (*gorm.DB, error) {
+	// 启动健康检查器（仅首次调用时启动）
+	startHealthChecker()
+
+	// 第一次检查：无锁快速路径，直接从缓存获取
+	if sqlDB, isOk := dbMap.Load(tenantID); isOk {
+		return sqlDB.(*gorm.DB), nil
+	}
+
+	// 缓存未命中，需要创建新连接，使用键锁避免重复创建
 	key := "SQLDB_" + tenantID
 	keylock.GetKeyLockIns().Lock(key)
 	defer keylock.GetKeyLockIns().Unlock(key)
-	applicationName, enableTrace, logLevel := parseArguments(args...)
-	if sqldb, isOk := dbMap.Load(tenantID); isOk {
-		db := sqldb.(*gorm.DB)
-		dbInfo, _ := db.DB()
-		if err := dbInfo.Ping(); err != nil {
-			_ = dbInfo.Close()
-			dbMap.Delete(tenantID)
-			newDb, err := _getDB(tenantID, crmDB, &OptSQL{
-				DBConfig:        gorm.Config{Logger: logger.Default.LogMode(logLevel)},
-				ApplicationName: applicationName,
-				EnableTrace:     enableTrace,
-			}, enable)
-			if err != nil {
-				return nil, err
-			}
-			dbMap.Store(tenantID, newDb)
-			return newDb, nil
-		}
-		return db, nil
+
+	// 第二次检查：可能在等待锁期间已被其他goroutine创建
+	if sqlDB, isOk := dbMap.Load(tenantID); isOk {
+		return sqlDB.(*gorm.DB), nil
 	}
+
+	// 确实需要创建新连接
+	applicationName, enableTrace, logLevel := parseArguments(args...)
 	newDb, err := _getDB(tenantID, crmDB, &OptSQL{
 		DBConfig:        gorm.Config{Logger: logger.Default.LogMode(logLevel)},
 		ApplicationName: applicationName,
@@ -218,7 +225,9 @@ func GetDbFromMapV2(tenantID string, crmDB *gorm.DB, enable bool, args ...interf
 	if err != nil {
 		return nil, err
 	}
+
 	dbMap.Store(tenantID, newDb)
+	soelog.Logger.Info(fmt.Sprintf("创建新数据源连接：租户[%s]", tenantID))
 	return newDb, nil
 }
 
@@ -246,5 +255,103 @@ func UpdateMapV2(tenantID string) {
 		sqlDb, _ := db.DB()
 		_ = sqlDb.Close()
 		dbMap.Delete(tenantID)
+	}
+}
+
+// startHealthChecker 启动异步健康检查器（单例模式）
+func startHealthChecker() {
+	healthCheckerOnce.Do(func() {
+		healthCheckerCtx, healthCheckerCancel = context.WithCancel(context.Background())
+		go healthCheckLoop(healthCheckerCtx)
+		soelog.Logger.Info("租户数据源健康检查器已启动")
+	})
+}
+
+// StopHealthChecker 停止健康检查器（用于优雅关闭）
+func StopHealthChecker() {
+	if healthCheckerCancel != nil {
+		healthCheckerCancel()
+		soelog.Logger.Info("租户数据源健康检查器已停止")
+	}
+}
+
+// healthCheckLoop 健康检查循环
+func healthCheckLoop(ctx context.Context) {
+	ticker := time.NewTicker(healthCheckInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			checkAllConnections()
+		}
+	}
+}
+
+// checkAllConnections 检查所有租户连接的健康状态
+func checkAllConnections() {
+	dbMap.Range(func(key, value interface{}) bool {
+		tenantID := key.(string)
+		db := value.(*gorm.DB)
+
+		// 使用带超时的context进行Ping检查
+		ctx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
+		defer cancel()
+
+		sqlDB, err := db.DB()
+		if err != nil {
+			soelog.Logger.Error(fmt.Sprintf("租户[%s]获取底层数据库连接失败: %v", tenantID, err))
+			removeAndCloseDB(tenantID, db)
+			return true
+		}
+
+		// 在独立goroutine中执行Ping，避免阻塞其他租户的检查
+		done := make(chan error, 1)
+		go func() {
+			done <- sqlDB.PingContext(ctx)
+		}()
+
+		select {
+		case err := <-done:
+			if err != nil {
+				soelog.Logger.Warn(fmt.Sprintf("租户[%s]连接健康检查失败，将移除缓存: %v", tenantID, err))
+				removeAndCloseDB(tenantID, db)
+				// 记录连接池状态
+				if stats := sqlDB.Stats(); stats.Idle == 0 {
+					senMsgToWx(tenantID, stats)
+				}
+			}
+		case <-ctx.Done():
+			soelog.Logger.Warn(fmt.Sprintf("租户[%s]连接健康检查超时，将移除缓存", tenantID))
+			removeAndCloseDB(tenantID, db)
+		}
+
+		return true
+	})
+}
+
+// removeAndCloseDB 移除并关闭数据库连接
+func removeAndCloseDB(tenantID string, db *gorm.DB) {
+	dbMap.Delete(tenantID)
+	if sqlDB, err := db.DB(); err == nil {
+		_ = sqlDB.Close()
+	}
+}
+
+// SetHealthCheckInterval 设置健康检查间隔（用于测试或特殊场景调整）
+func SetHealthCheckInterval(interval time.Duration) {
+	if interval > 0 {
+		healthCheckInterval = interval
+		soelog.Logger.Info(fmt.Sprintf("健康检查间隔已设置为: %v", interval))
+	}
+}
+
+// SetHealthCheckTimeout 设置健康检查超时时间
+func SetHealthCheckTimeout(timeout time.Duration) {
+	if timeout > 0 {
+		healthCheckTimeout = timeout
+		soelog.Logger.Info(fmt.Sprintf("健康检查超时时间已设置为: %v", timeout))
 	}
 }
