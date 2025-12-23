@@ -2,8 +2,9 @@ package tenantdb
 
 import (
 	"errors"
-	"gorm.io/gorm"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type (
