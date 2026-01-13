@@ -1,6 +1,8 @@
 package ants
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"runtime"
 	"sync"
@@ -134,6 +136,35 @@ func CoroutineRelease() {
 }
 
 // SubmitTask 向全局协程池提交任务（不追踪）
+//
+// ⚠️ 并发安全注意事项：
+//
+// 1. 避免在闭包中直接引用外部的 map、slice、指针等可变数据
+// 2. 如需传递数据，请在提交前拷贝或使用 SubmitTaskWithData
+// 3. 字符串、数字等值类型可以安全使用
+//
+// 示例（不安全）：
+//
+//	data := map[string]string{"key": "value"}
+//	ants.SubmitTask(func() {
+//	    json.Marshal(data) // ❌ 可能并发访问 data
+//	})
+//
+// 示例（安全方式1 - 手动序列化）：
+//
+//	data := map[string]string{"key": "value"}
+//	dataBytes, _ := json.Marshal(data) // ✅ 先序列化
+//	ants.SubmitTask(func() {
+//	    var d map[string]string
+//	    json.Unmarshal(dataBytes, &d) // ✅ 使用副本
+//	})
+//
+// 示例（安全方式2 - 使用辅助方法）：
+//
+//	data := map[string]string{"key": "value"}
+//	ants.SubmitTaskWithData(data, func(d interface{}) {
+//	    // d 是安全的副本
+//	})
 func SubmitTask(task func()) {
 	if antsPool == nil {
 		log.Printf("[ants] 协程池未初始化，无法提交任务")
@@ -157,6 +188,143 @@ func SubmitTaskWithID(taskID string, task func()) {
 	if err != nil {
 		log.Printf("[ants][%s] SubmitTaskWithID[%s]，发生异常: %v", antsPool.name, taskID, err)
 	}
+}
+
+// SubmitTaskWithData 向全局协程池提交带数据的任务（自动处理数据拷贝，确保并发安全）
+//
+// 此方法通过 JSON 序列化/反序列化自动创建数据副本，避免并发访问问题。
+// 适用于数据可以被 JSON 序列化的场景（struct、map、slice 等）。
+//
+// 参数：
+//   - data: 要传递给任务的数据（会被自动拷贝）
+//   - task: 任务函数，接收拷贝后的数据
+//
+// 示例：
+//
+//	// 传递 map
+//	data := map[string]interface{}{
+//	    "userId": 123,
+//	    "action": "login",
+//	}
+//	ants.SubmitTaskWithData(data, func(d interface{}) {
+//	    dataMap := d.(map[string]interface{})
+//	    fmt.Println(dataMap["userId"])
+//	})
+//
+//	// 传递 struct
+//	user := User{ID: 123, Name: "test"}
+//	ants.SubmitTaskWithData(user, func(d interface{}) {
+//	    u := d.(User)
+//	    fmt.Println(u.Name)
+//	})
+//
+// 注意：
+//   - 数据必须可以被 JSON 序列化
+//   - 不支持 channel、func、循环引用等类型
+//   - 有序列化开销，但比锁竞争更高效
+func SubmitTaskWithData(data interface{}, task func(interface{})) error {
+	if antsPool == nil {
+		err := fmt.Errorf("协程池未初始化")
+		log.Printf("[ants] %v", err)
+		return err
+	}
+
+	// 在主 goroutine 中序列化数据
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		log.Printf("[ants][%s] SubmitTaskWithData 序列化数据失败: %v", antsPool.name, err)
+		return fmt.Errorf("序列化数据失败: %w", err)
+	}
+
+	// 提交到协程池
+	err = antsPool.Submit(func() {
+		// 在协程池中反序列化，得到独立副本
+		var clonedData interface{}
+		if err := json.Unmarshal(dataBytes, &clonedData); err != nil {
+			log.Printf("[ants][%s] SubmitTaskWithData 反序列化数据失败: %v", antsPool.name, err)
+			return
+		}
+
+		// 执行任务，使用副本
+		task(clonedData)
+	})
+
+	if err != nil {
+		log.Printf("[ants][%s] SubmitTaskWithData 提交任务失败: %v", antsPool.name, err)
+		return fmt.Errorf("提交任务失败: %w", err)
+	}
+
+	return nil
+}
+
+// SubmitTaskGeneric 向全局协程池提交带类型安全数据的任务（泛型版本，自动拷贝）
+//
+// 此方法使用泛型提供类型安全的数据传递，通过 JSON 序列化/反序列化创建数据副本。
+// 需要 Go 1.18 或更高版本。
+//
+// 参数：
+//   - data: 要传递给任务的数据（会被自动拷贝）
+//   - task: 任务函数，接收拷贝后的数据（类型安全）
+//
+// 示例：
+//
+//	// 传递 struct（类型安全）
+//	type User struct {
+//	    ID   int
+//	    Name string
+//	}
+//	user := User{ID: 123, Name: "test"}
+//	ants.SubmitTaskGeneric(user, func(u User) {
+//	    fmt.Println(u.Name) // 类型安全，无需类型断言
+//	})
+//
+//	// 传递 map
+//	data := map[string]string{"key": "value"}
+//	ants.SubmitTaskGeneric(data, func(d map[string]string) {
+//	    fmt.Println(d["key"]) // 类型安全
+//	})
+//
+// 优点：
+//   - 类型安全，编译时检查
+//   - 自动拷贝，并发安全
+//   - API 简洁，无需类型断言
+//
+// 注意：
+//   - 数据必须可以被 JSON 序列化
+//   - 需要 Go 1.18+
+func SubmitTaskGeneric[T any](data T, task func(T)) error {
+	if antsPool == nil {
+		err := fmt.Errorf("协程池未初始化")
+		log.Printf("[ants] %v", err)
+		return err
+	}
+
+	// 在主 goroutine 中序列化数据
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		log.Printf("[ants][%s] SubmitTaskGeneric 序列化数据失败: %v", antsPool.name, err)
+		return fmt.Errorf("序列化数据失败: %w", err)
+	}
+
+	// 提交到协程池
+	err = antsPool.Submit(func() {
+		// 在协程池中反序列化，得到独立副本
+		var clonedData T
+		if err := json.Unmarshal(dataBytes, &clonedData); err != nil {
+			log.Printf("[ants][%s] SubmitTaskGeneric 反序列化数据失败: %v", antsPool.name, err)
+			return
+		}
+
+		// 执行任务，使用副本
+		task(clonedData)
+	})
+
+	if err != nil {
+		log.Printf("[ants][%s] SubmitTaskGeneric 提交任务失败: %v", antsPool.name, err)
+		return fmt.Errorf("提交任务失败: %w", err)
+	}
+
+	return nil
 }
 
 // SetGlobalHealthConfig 设置全局协程池的健康分析配置

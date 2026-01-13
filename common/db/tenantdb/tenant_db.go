@@ -189,7 +189,7 @@ func senMsgToWx(tenantId string, status sql.DBStats) {
 			errMsg := fmt.Sprintf("租户：%s 数据源出现异常   最大连接：%d,打开连接：%d，使用连接：%d，等待连接：%d", tenantId, status.MaxOpenConnections, status.OpenConnections, status.InUse,
 				status.WaitCount)
 			log.Println(errMsg)
-			_ = utils.SendMsgToWorkWx(utils.DefaultRegChatID, errMsg, utils.WorkWxAPIPath, utils.WorkWxRestTokenStr)
+			utils.SendMsgToWorkWx(utils.DefaultRegChatID, errMsg, utils.WorkWxAPIPath, utils.WorkWxRestTokenStr)
 		}()
 	}
 }

@@ -4,20 +4,22 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
+	"io"
+	"log"
 	"net/http"
 	"time"
 )
 
-//ChatMsg 企业微信消费
+// ChatMsg 企业微信消费
 type ChatMsg struct {
 	ChatID  string `json:"chatID"`
 	Content string `json:"content"`
 }
 
-//DefaultRegChatID 插件注册预警群  16613216078422402691
+// DefaultRegChatID 插件注册预警群  16613216078422402691
 const DefaultRegChatID = "16613216078422402691"
 
-//WorkWxAPIPath 企业微信rest路径
+// WorkWxAPIPath 企业微信rest路径
 const WorkWxAPIPath = "https://www.soesoft.org/workwx-rest/api/send-msg-to-chat"
 
 // WorkWxRestTokenStr 企业微信访问token
@@ -30,7 +32,7 @@ const (
 )
 
 // SendMsgToWorkWx 发送信息到企业微信会话
-func SendMsgToWorkWx(chatid, content, apiPath, tokenStr string) error {
+func SendMsgToWorkWx(chatid, content, apiPath, tokenStr string) {
 	/*
 		body := fmt.Sprintf(`
 		{
@@ -52,20 +54,20 @@ func SendMsgToWorkWx(chatid, content, apiPath, tokenStr string) error {
 		Transport: tr, //解决x509: certificate signed by unknown authority
 	}
 
-	//req, err := http.NewRequest("POST", apiPath, bytes.NewReader([]byte(body)))
 	req, err := http.NewRequest("POST", apiPath, bytes.NewReader(postBody))
 	if err != nil {
-		return err
+		log.Printf("[SendMsgToWorkWx] 创建HTTP请求失败: %v, chatID: %s", err, chatid)
+		return
 	}
 	req.Header.Add("Content-Type", "application/json;charset=utf-8")
 	req.Header.Add("Authorization", tokenStr)
-	if err != nil {
-		return err
-	}
+
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		log.Printf("[SendMsgToWorkWx] 发送企业微信消息失败: %v, chatID: %s, content: %s", err, chatid, content)
+		return
 	}
-	defer resp.Body.Close()
-	return nil
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 }
