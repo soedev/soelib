@@ -89,6 +89,46 @@ func TestServiceClient_Post(t *testing.T) {
 	}
 }
 
+func TestServiceClient_Put(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("Expected PUT, got %s", r.Method)
+		}
+
+		var req MockRequest
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &req)
+
+		resp := SoeGoResponseVO{
+			Code: 200,
+			Msg:  "ok",
+			Data: map[string]interface{}{
+				"echo": req,
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewServiceClient(ServiceClientOption{
+		ServiceName: "test-service",
+		BaseURL:     server.URL,
+	})
+
+	input := MockRequest{Name: "PutClient", Age: 18}
+	var response SoeGoResponseVO
+
+	err := client.PutEntity("/api/update", input, &response)
+	if err != nil {
+		t.Fatalf("PutEntity failed: %v", err)
+	}
+
+	if response.Code != 200 {
+		t.Errorf("Expected code 200, got %d", response.Code)
+	}
+}
+
 // TestServiceClient_ConnectionPoolReuse 测试连接池复用
 func TestServiceClient_ConnectionPoolReuse(t *testing.T) {
 	var requestCount int32

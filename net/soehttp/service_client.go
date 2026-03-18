@@ -54,12 +54,16 @@ type RequestOptions struct {
 type SoeServiceClient interface {
 	// Post 发送 POST 请求（相对路径，如：/api/worker/get）
 	Post(path string, postBody *[]byte) ([]byte, error)
+	// Put 发送 PUT 请求（相对路径）
+	Put(path string, putBody *[]byte) ([]byte, error)
 	// Get 发送 GET 请求（相对路径）
 	Get(path string, reader io.Reader) ([]byte, error)
 	// Delete 发送 DELETE 请求（相对路径）
 	Delete(path string, reader io.Reader) ([]byte, error)
 	// PostEntity 发送 POST 请求并自动解析响应
 	PostEntity(path string, v interface{}, r interface{}) error
+	// PutEntity 发送 PUT 请求并自动解析响应
+	PutEntity(path string, v interface{}, r interface{}) error
 	// GetEntity 发送 GET 请求并自动解析响应
 	GetEntity(path string, v interface{}) error
 	// DeleteEntity 发送 DELETE 请求并自动解析响应
@@ -67,12 +71,16 @@ type SoeServiceClient interface {
 
 	// PostWithOptions 发送 POST 请求（支持请求级选项）⭐ 新增
 	PostWithOptions(path string, postBody *[]byte, opts RequestOptions) ([]byte, error)
+	// PutWithOptions 发送 PUT 请求（支持请求级选项）⭐ 新增
+	PutWithOptions(path string, putBody *[]byte, opts RequestOptions) ([]byte, error)
 	// GetWithOptions 发送 GET 请求（支持请求级选项）⭐ 新增
 	GetWithOptions(path string, reader io.Reader, opts RequestOptions) ([]byte, error)
 	// DeleteWithOptions 发送 DELETE 请求（支持请求级选项）⭐ 新增
 	DeleteWithOptions(path string, reader io.Reader, opts RequestOptions) ([]byte, error)
 	// PostEntityWithOptions 发送 POST 请求并自动解析响应（支持请求级选项）⭐ 新增
 	PostEntityWithOptions(path string, v interface{}, r interface{}, opts RequestOptions) error
+	// PutEntityWithOptions 发送 PUT 请求并自动解析响应（支持请求级选项）⭐ 新增
+	PutEntityWithOptions(path string, v interface{}, r interface{}, opts RequestOptions) error
 	// GetEntityWithOptions 发送 GET 请求并自动解析响应（支持请求级选项）⭐ 新增
 	GetEntityWithOptions(path string, v interface{}, opts RequestOptions) error
 	// DeleteEntityWithOptions 发送 DELETE 请求并自动解析响应（支持请求级选项）⭐ 新增
@@ -239,6 +247,26 @@ func (s *serviceClientImpl) PostWithOptions(path string, postBody *[]byte, opts 
 	return s.doWithOptions(req, "RemotePost", opts)
 }
 
+// Put 发送 PUT 请求
+func (s *serviceClientImpl) Put(path string, putBody *[]byte) ([]byte, error) {
+	return s.PutWithOptions(path, putBody, RequestOptions{})
+}
+
+// PutWithOptions 发送 PUT 请求（支持请求级选项）⭐ 新增
+func (s *serviceClientImpl) PutWithOptions(path string, putBody *[]byte, opts RequestOptions) ([]byte, error) {
+	fullURL := s.baseURL + path
+	req, err := http.NewRequestWithContext(s.context, "PUT", fullURL, bytes.NewReader(*putBody))
+	if err != nil {
+		return nil, err
+	}
+
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(*putBody)), nil
+	}
+
+	return s.doWithOptions(req, "RemotePUT", opts)
+}
+
 // Get 发送 GET 请求
 func (s *serviceClientImpl) Get(path string, reader io.Reader) ([]byte, error) {
 	return s.GetWithOptions(path, reader, RequestOptions{})
@@ -281,6 +309,31 @@ func (s *serviceClientImpl) PostEntityWithOptions(path string, v interface{}, r 
 		return err
 	}
 	body, err := s.PostWithOptions(path, &b, opts)
+	if err != nil {
+		return err
+	}
+	if body == nil {
+		return errors.New("未查询到任何信息")
+	}
+	err = json.Unmarshal(body, r)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// PutEntity 发送 PUT 请求并自动解析响应
+func (s *serviceClientImpl) PutEntity(path string, v interface{}, r interface{}) error {
+	return s.PutEntityWithOptions(path, v, r, RequestOptions{})
+}
+
+// PutEntityWithOptions 发送 PUT 请求并自动解析响应（支持请求级选项）⭐ 新增
+func (s *serviceClientImpl) PutEntityWithOptions(path string, v interface{}, r interface{}, opts RequestOptions) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	body, err := s.PutWithOptions(path, &b, opts)
 	if err != nil {
 		return err
 	}
