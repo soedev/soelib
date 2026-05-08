@@ -2,13 +2,15 @@ package specialdb
 
 import (
 	"errors"
+	"fmt"
+	"regexp"
+	"time"
+
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
 	"gorm.io/plugin/opentelemetry/tracing"
-	"regexp"
-	"time"
 )
 
 type DbConfig struct {
@@ -74,26 +76,21 @@ func ConnDB(config DbConfig) (*gorm.DB, error) {
 
 // Transaction 统一事务
 func Transaction(tx *gorm.DB, fn func() error) (err error) {
-	//开启事务
-	//tx := db
 	if tx.Error != nil {
-		return errors.New("开启事务失败")
+		return fmt.Errorf("开启事务失败: %v", tx.Error)
 	}
-
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			err = fmt.Errorf("事务发生panic: %v", r)
+		}
+	}()
 	err = fn()
 	if err != nil {
-		errRb := tx.Rollback().Error
-		if errRb != nil {
-			return errors.New("事务回滚失败")
-		}
+		tx.Rollback()
 		return err
 	}
-
-	//提交事务
 	err = tx.Commit().Error
-	if err != nil {
-		return errors.New(err.Error())
-	}
 	return nil
 }
 
