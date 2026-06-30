@@ -91,7 +91,7 @@ func Transaction(tx *gorm.DB, fn func() error) (err error) {
 		return err
 	}
 	err = tx.Commit().Error
-	return nil
+	return err
 }
 
 // FilteredSQLInject 正则过滤sql注入的方法
