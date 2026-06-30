@@ -30,7 +30,10 @@ var (
 	healthCheckerOnce   sync.Once
 	healthCheckerCtx    context.Context
 	healthCheckerCancel context.CancelFunc
+	dbCacheHealth       sync.Map
 )
+
+const cacheHealthCheckMinInterval = 10 * time.Second
 
 type OptSQL struct {
 	DBConfig        gorm.Config
@@ -51,7 +54,7 @@ func _getDB(tenantID string, crmDB *gorm.DB, opt *OptSQL, enable bool) (sqlDb *g
 		if tenantDataSourceBack != nil && tenantDataSourceBack.Enable == 1 {
 			utils.CopyStruct(tenantDataSourceBack, &tenantDataSource)
 			if tenantDataSource.URL == "" {
-				soelog.Logger.Error("备用数据源赋值失败")
+				logTenantDBError("备用数据源赋值失败")
 			}
 		} else {
 			isNew = false
@@ -121,8 +124,8 @@ func GetDbFromMap(tenantID string, crmDB *gorm.DB, args ...interface{}) (*gorm.D
 	startHealthChecker()
 
 	// 第一次检查：无锁快速路径，直接从缓存获取
-	if sqlDB, isOk := dbMap.Load(tenantID); isOk {
-		return sqlDB.(*gorm.DB), nil
+	if sqlDB, isOk := loadCachedDB(tenantID); isOk {
+		return sqlDB, nil
 	}
 
 	// 缓存未命中，需要创建新连接，使用键锁避免重复创建
@@ -131,8 +134,8 @@ func GetDbFromMap(tenantID string, crmDB *gorm.DB, args ...interface{}) (*gorm.D
 	defer keylock.GetKeyLockIns().Unlock(key)
 
 	// 第二次检查：可能在等待锁期间已被其他goroutine创建
-	if sqlDB, isOk := dbMap.Load(tenantID); isOk {
-		return sqlDB.(*gorm.DB), nil
+	if sqlDB, isOk := loadCachedDB(tenantID); isOk {
+		return sqlDB, nil
 	}
 
 	// 确实需要创建新连接
@@ -148,7 +151,8 @@ func GetDbFromMap(tenantID string, crmDB *gorm.DB, args ...interface{}) (*gorm.D
 	}
 
 	dbMap.Store(tenantID, newDb)
-	soelog.Logger.Info(fmt.Sprintf("创建新数据源连接：租户[%s]", tenantID))
+	markCachedDBHealthy(tenantID)
+	logTenantDBInfo(fmt.Sprintf("创建新数据源连接：租户[%s]", tenantID))
 	return newDb, nil
 }
 
@@ -158,8 +162,8 @@ func GetDbFromMapWithOpt(tenantID string, crmDB *gorm.DB, opt *OptSQL) (*gorm.DB
 	startHealthChecker()
 
 	// 第一次检查：无锁快速路径，直接从缓存获取
-	if sqlDB, isOk := dbMap.Load(tenantID); isOk {
-		return sqlDB.(*gorm.DB), nil
+	if sqlDB, isOk := loadCachedDB(tenantID); isOk {
+		return sqlDB, nil
 	}
 
 	// 缓存未命中，需要创建新连接，使用键锁避免重复创建
@@ -168,8 +172,8 @@ func GetDbFromMapWithOpt(tenantID string, crmDB *gorm.DB, opt *OptSQL) (*gorm.DB
 	defer keylock.GetKeyLockIns().Unlock(key)
 
 	// 第二次检查：可能在等待锁期间已被其他goroutine创建
-	if sqlDB, isOk := dbMap.Load(tenantID); isOk {
-		return sqlDB.(*gorm.DB), nil
+	if sqlDB, isOk := loadCachedDB(tenantID); isOk {
+		return sqlDB, nil
 	}
 
 	// 确实需要创建新连接
@@ -179,7 +183,8 @@ func GetDbFromMapWithOpt(tenantID string, crmDB *gorm.DB, opt *OptSQL) (*gorm.DB
 	}
 
 	dbMap.Store(tenantID, newDb)
-	soelog.Logger.Info(fmt.Sprintf("创建新数据源连接：租户[%s]", tenantID))
+	markCachedDBHealthy(tenantID)
+	logTenantDBInfo(fmt.Sprintf("创建新数据源连接：租户[%s]", tenantID))
 	return newDb, nil
 }
 
@@ -200,8 +205,8 @@ func GetDbFromMapV2(tenantID string, crmDB *gorm.DB, enable bool, args ...interf
 	startHealthChecker()
 
 	// 第一次检查：无锁快速路径，直接从缓存获取
-	if sqlDB, isOk := dbMap.Load(tenantID); isOk {
-		return sqlDB.(*gorm.DB), nil
+	if sqlDB, isOk := loadCachedDB(tenantID); isOk {
+		return sqlDB, nil
 	}
 
 	// 缓存未命中，需要创建新连接，使用键锁避免重复创建
@@ -210,8 +215,8 @@ func GetDbFromMapV2(tenantID string, crmDB *gorm.DB, enable bool, args ...interf
 	defer keylock.GetKeyLockIns().Unlock(key)
 
 	// 第二次检查：可能在等待锁期间已被其他goroutine创建
-	if sqlDB, isOk := dbMap.Load(tenantID); isOk {
-		return sqlDB.(*gorm.DB), nil
+	if sqlDB, isOk := loadCachedDB(tenantID); isOk {
+		return sqlDB, nil
 	}
 
 	// 确实需要创建新连接
@@ -227,7 +232,8 @@ func GetDbFromMapV2(tenantID string, crmDB *gorm.DB, enable bool, args ...interf
 	}
 
 	dbMap.Store(tenantID, newDb)
-	soelog.Logger.Info(fmt.Sprintf("创建新数据源连接：租户[%s]", tenantID))
+	markCachedDBHealthy(tenantID)
+	logTenantDBInfo(fmt.Sprintf("创建新数据源连接：租户[%s]", tenantID))
 	return newDb, nil
 }
 
@@ -249,12 +255,81 @@ func parseArguments(args ...interface{}) (string, bool, logger.LogLevel) {
 	return applicationName, enableTrace, logLevel
 }
 
+func loadCachedDB(tenantID string) (*gorm.DB, bool) {
+	value, isOk := dbMap.Load(tenantID)
+	if !isOk {
+		return nil, false
+	}
+
+	db := value.(*gorm.DB)
+	if !shouldCheckCachedDB(tenantID) {
+		return db, true
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		logTenantDBError(fmt.Sprintf("租户[%s]获取底层数据库连接失败，将移除缓存: %v", tenantID, err))
+		removeCachedDB(tenantID, db)
+		return nil, false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
+	defer cancel()
+	if err := sqlDB.PingContext(ctx); err != nil {
+		logTenantDBWarn(fmt.Sprintf("租户[%s]缓存连接不可用，将移除缓存: %v", tenantID, err))
+		removeCachedDB(tenantID, db)
+		return nil, false
+	}
+
+	markCachedDBHealthy(tenantID)
+	return db, true
+}
+
+func shouldCheckCachedDB(tenantID string) bool {
+	value, ok := dbCacheHealth.Load(tenantID)
+	if !ok {
+		return true
+	}
+	lastCheckedAt, ok := value.(time.Time)
+	if !ok {
+		dbCacheHealth.Delete(tenantID)
+		return true
+	}
+	return time.Since(lastCheckedAt) >= cacheHealthCheckMinInterval
+}
+
+func markCachedDBHealthy(tenantID string) {
+	dbCacheHealth.Store(tenantID, time.Now())
+}
+
+func logTenantDBWarn(msg string) {
+	if soelog.Logger != nil {
+		soelog.Logger.Warn(msg)
+		return
+	}
+	log.Println(msg)
+}
+
+func logTenantDBError(msg string) {
+	if soelog.Logger != nil {
+		soelog.Logger.Error(msg)
+		return
+	}
+	log.Println(msg)
+}
+
+func logTenantDBInfo(msg string) {
+	if soelog.Logger != nil {
+		soelog.Logger.Info(msg)
+		return
+	}
+	log.Println(msg)
+}
+
 func UpdateMapV2(tenantID string) {
 	if sqlDb, isOk := dbMap.Load(tenantID); isOk {
 		db := sqlDb.(*gorm.DB)
-		sqlDb, _ := db.DB()
-		_ = sqlDb.Close()
-		dbMap.Delete(tenantID)
+		removeCachedDB(tenantID, db)
 	}
 }
 
@@ -263,7 +338,7 @@ func startHealthChecker() {
 	healthCheckerOnce.Do(func() {
 		healthCheckerCtx, healthCheckerCancel = context.WithCancel(context.Background())
 		go healthCheckLoop(healthCheckerCtx)
-		soelog.Logger.Info("租户数据源健康检查器已启动")
+		logTenantDBInfo("租户数据源健康检查器已启动")
 	})
 }
 
@@ -271,7 +346,7 @@ func startHealthChecker() {
 func StopHealthChecker() {
 	if healthCheckerCancel != nil {
 		healthCheckerCancel()
-		soelog.Logger.Info("租户数据源健康检查器已停止")
+		logTenantDBInfo("租户数据源健康检查器已停止")
 	}
 }
 
@@ -302,7 +377,7 @@ func checkAllConnections() {
 
 		sqlDB, err := db.DB()
 		if err != nil {
-			soelog.Logger.Error(fmt.Sprintf("租户[%s]获取底层数据库连接失败: %v", tenantID, err))
+			logTenantDBError(fmt.Sprintf("租户[%s]获取底层数据库连接失败: %v", tenantID, err))
 			removeAndCloseDB(tenantID, db)
 			return true
 		}
@@ -316,7 +391,7 @@ func checkAllConnections() {
 		select {
 		case err := <-done:
 			if err != nil {
-				soelog.Logger.Warn(fmt.Sprintf("租户[%s]连接健康检查失败，将移除缓存: %v", tenantID, err))
+				logTenantDBWarn(fmt.Sprintf("租户[%s]连接健康检查失败，将移除缓存: %v", tenantID, err))
 				removeAndCloseDB(tenantID, db)
 				// 记录连接池状态
 				if stats := sqlDB.Stats(); stats.Idle == 0 {
@@ -324,7 +399,7 @@ func checkAllConnections() {
 				}
 			}
 		case <-ctx.Done():
-			soelog.Logger.Warn(fmt.Sprintf("租户[%s]连接健康检查超时，将移除缓存", tenantID))
+			logTenantDBWarn(fmt.Sprintf("租户[%s]连接健康检查超时，将移除缓存", tenantID))
 			removeAndCloseDB(tenantID, db)
 		}
 
@@ -334,9 +409,16 @@ func checkAllConnections() {
 
 // removeAndCloseDB 移除并关闭数据库连接
 func removeAndCloseDB(tenantID string, db *gorm.DB) {
-	dbMap.Delete(tenantID)
-	if sqlDB, err := db.DB(); err == nil {
-		_ = sqlDB.Close()
+	removeCachedDB(tenantID, db)
+}
+
+func removeCachedDB(tenantID string, db *gorm.DB) {
+	deleted := dbMap.CompareAndDelete(tenantID, db)
+	if deleted {
+		dbCacheHealth.Delete(tenantID)
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
 	}
 }
 
@@ -344,7 +426,7 @@ func removeAndCloseDB(tenantID string, db *gorm.DB) {
 func SetHealthCheckInterval(interval time.Duration) {
 	if interval > 0 {
 		healthCheckInterval = interval
-		soelog.Logger.Info(fmt.Sprintf("健康检查间隔已设置为: %v", interval))
+		logTenantDBInfo(fmt.Sprintf("健康检查间隔已设置为: %v", interval))
 	}
 }
 
@@ -352,6 +434,6 @@ func SetHealthCheckInterval(interval time.Duration) {
 func SetHealthCheckTimeout(timeout time.Duration) {
 	if timeout > 0 {
 		healthCheckTimeout = timeout
-		soelog.Logger.Info(fmt.Sprintf("健康检查超时时间已设置为: %v", timeout))
+		logTenantDBInfo(fmt.Sprintf("健康检查超时时间已设置为: %v", timeout))
 	}
 }

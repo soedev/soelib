@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/soedev/soelib/common/db/specialdb"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -36,6 +37,94 @@ func TestGetDbFromMapWithOpt(t *testing.T) {
 	err = db.Exec("select 1").Error
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLoadCachedDBDropsClosedConnection(t *testing.T) {
+	tenantID := "closed-cache-tenant"
+	dbMap.Delete(tenantID)
+	dbCacheHealth.Delete(tenantID)
+	defer dbMap.Delete(tenantID)
+	defer dbCacheHealth.Delete(tenantID)
+
+	cachedDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := cachedDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	dbMap.Store(tenantID, cachedDB)
+
+	if db, ok := loadCachedDB(tenantID); ok || db != nil {
+		t.Fatal("已关闭的缓存连接不应继续返回")
+	}
+	if _, ok := dbMap.Load(tenantID); ok {
+		t.Fatal("已关闭的缓存连接应从租户连接缓存移除")
+	}
+}
+
+func TestLoadCachedDBSkipsHealthCheckWithinInterval(t *testing.T) {
+	tenantID := "recent-cache-tenant"
+	dbMap.Delete(tenantID)
+	dbCacheHealth.Delete(tenantID)
+	defer dbMap.Delete(tenantID)
+	defer dbCacheHealth.Delete(tenantID)
+
+	cachedDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := cachedDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	markCachedDBHealthy(tenantID)
+	if err := sqlDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	dbMap.Store(tenantID, cachedDB)
+
+	db, ok := loadCachedDB(tenantID)
+	if !ok || db == nil {
+		t.Fatal("健康检查窗口内应直接返回缓存连接，避免每次命中都 Ping")
+	}
+	if _, ok := dbMap.Load(tenantID); !ok {
+		t.Fatal("健康检查窗口内不应移除缓存连接")
+	}
+}
+
+func TestRemoveCachedDBDoesNotRemoveReplacementConnection(t *testing.T) {
+	tenantID := "replacement-cache-tenant"
+	dbMap.Delete(tenantID)
+	dbCacheHealth.Delete(tenantID)
+	defer dbMap.Delete(tenantID)
+	defer dbCacheHealth.Delete(tenantID)
+
+	oldDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dbMap.Store(tenantID, newDB)
+	removeCachedDB(tenantID, oldDB)
+
+	value, ok := dbMap.Load(tenantID)
+	if !ok {
+		t.Fatal("不应删除已替换的新缓存连接")
+	}
+	if value.(*gorm.DB) != newDB {
+		t.Fatal("缓存连接不应被旧连接清理覆盖")
 	}
 }
 
